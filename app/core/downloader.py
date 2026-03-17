@@ -2,6 +2,7 @@ import os
 import subprocess
 import time
 import random
+import json
 
 class Downloader:
     def __init__(self, config):
@@ -9,6 +10,45 @@ class Downloader:
         # 从配置中读取组件路径
         self.yt_dlp_path = config['components']['yt-dlp']['path']
         self.ffmpeg_path = config['components']['ffmpeg']['path']
+        self.netscape_cookie_path = "./data/cookie_netscape.txt"
+
+    def convert_cookie_to_netscape(self, json_cookie_path):
+        """将 JSON 格式的 cookie 转换为 Netscape 格式供 yt-dlp 使用"""
+        try:
+            with open(json_cookie_path, 'r', encoding='utf-8') as f:
+                cookie_data = json.load(f)
+            
+            # Netscape 格式头部
+            netscape_lines = ["# Netscape HTTP Cookie File", ""]
+            
+            # B站域名
+            domain = ".bilibili.com"
+            
+            # 转换关键 cookie 字段
+            cookie_mapping = {
+                'sessdata': 'SESSDATA',
+                'bili_jct': 'bili_jct', 
+                'buvid3': 'buvid3',
+                'dedeuserid': 'DedeUserID',
+                'ac_time_value': 'ac_time_value'
+            }
+            
+            for json_key, netscape_name in cookie_mapping.items():
+                value = cookie_data.get(json_key, '')
+                if value:
+                    # Netscape 格式: domain, flag, path, secure, expiration, name, value
+                    line = f"{domain}\tTRUE\t/\tFALSE\t0\t{netscape_name}\t{value}"
+                    netscape_lines.append(line)
+            
+            # 写入文件
+            with open(self.netscape_cookie_path, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(netscape_lines))
+            
+            return self.netscape_cookie_path
+            
+        except Exception as e:
+            print(f"[-] Cookie 转换失败: {e}")
+            return json_cookie_path  # 失败时返回原路径，让 yt-dlp 尝试
 
     def random_sleep(self, action_type="download"):
         """【防线1】防封号与风控随机抖动"""
@@ -27,6 +67,9 @@ class Downloader:
         if not os.path.exists(save_dir):
             os.makedirs(save_dir, exist_ok=True)
 
+        # 转换 cookie 格式
+        netscape_cookie = self.convert_cookie_to_netscape(cookie_file_path)
+
         # 拼接输出模板 (yt-dlp 会自动替换 %(ext)s 为 mp4)
         output_template = os.path.join(save_dir, f"{file_name}.%(ext)s")
 
@@ -36,7 +79,7 @@ class Downloader:
             "-f", "bestvideo+bestaudio/best",
             "--merge-output-format", "mp4",
             # 注入大会员 Cookie
-            "--cookies", cookie_file_path,
+            "--cookies", netscape_cookie,
             # 抓取元数据、封面、弹幕/字幕
             "--write-info-json",
             "--write-thumbnail",
