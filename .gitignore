@@ -19,8 +19,10 @@ bili_archive.db
 !/bin/.keep
 
 # 4. 个人配置文件 (防止覆盖云端或泄露本地路径)
-config.yaml
+# 注意：config.yaml 是核心配置模板，应该上传
+# 如需本地个性化配置不覆盖，请复制为 config.local.yaml
 .env
+config.local.yaml
 
 # 5. Python 缓存与虚拟环境 (不需要上传的代码垃圾)
 __pycache__/

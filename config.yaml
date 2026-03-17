@@ -1,0 +1,36 @@
+# ==========================================
+# BiliArchive-Pro 核心配置文件
+# ==========================================
+
+system:
+  download_path: "./downloads"
+  db_path: "./data/bili_archive.db"
+  cookie_path: "./data/cookie.json"
+  min_disk_gb: 5               # 磁盘爆盘保护阈值 (GB)
+  plex_mode: true              # 开启 Plex 兼容模式 (多P视频独立成集)
+  check_update_on_start: true  # 每次启动时检查组件更新
+  max_downloads_per_run: 0     # 每次运行最大下载视频数 (0=无限制，下载全部；建议测试时设为1)
+
+network:
+  # GitHub 下载加速代理前缀。留空表示直连。
+  # 示例: "https://mirror.ghproxy.com/"
+  github_proxy_url: "" 
+
+components:
+  yt-dlp:
+    strategy: "auto"           # auto (自动), notify (仅提醒), off (关闭)
+    path: "./bin/yt-dlp"
+  ffmpeg:
+    strategy: "notify"
+    path: "./bin/ffmpeg"
+
+archive_protection:
+  mark_deleted_prefix: "[源端已删]"  # 本地存在但 B 站已删的保护前缀
+  tombstone_prefix: "[失效墓碑]"     # 本地不存在且 B 站已删的占位前缀
+
+# 要备份的收藏夹列表
+# 留空将自动获取您的所有收藏夹
+favorites:
+  # - id: 12345678
+  #   name: "我的收藏夹"
+  # 可以添加多个收藏夹
