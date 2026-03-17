@@ -1,0 +1,14 @@
+# 核心通信与下载引擎
+bilibili-api-python>=16.2.0
+yt-dlp>=2023.11.16
+requests>=2.31.0
+
+# 任务调度与后台守护进程
+APScheduler>=3.10.4
+
+# 桌面端外壳 (后续在 Windows/Mac 打包时使用)
+PySide6>=6.6.0
+
+# 图文专栏解析 (预留)
+playwright>=1.40.0
+markdown2>=2.4.10

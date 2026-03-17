@@ -1,0 +1,35 @@
+# =========================
+# BiliArchive-Pro 黑名单配置
+# =========================
+
+# 1. 绝对机密数据 (账号凭据与本地数据库)
+/data/*
+!/data/.keep
+cookie.json
+bili_archive.db
+
+# 2. 媒体与资源目录 (体积过大，绝对不能上传)
+/downloads/*
+!/downloads/.keep
+/logs/*
+!/logs/.keep
+
+# 3. 外部二进制插件 (应由各端自行下载)
+/bin/*
+!/bin/.keep
+
+# 4. 个人配置文件 (防止覆盖云端或泄露本地路径)
+config.yaml
+.env
+
+# 5. Python 缓存与虚拟环境 (不需要上传的代码垃圾)
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+
+# 6. 系统生成文件
+.DS_Store
+Thumbs.db
