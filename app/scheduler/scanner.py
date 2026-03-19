@@ -25,8 +25,6 @@ class FavScanner:
         
         page = 1
         has_more = True
-        consecutive_existing_count = 0
-        MAX_CONSECUTIVE_EXISTING = 10 # 增量备份策略：连续10个视频/专栏已存在时，认为后续均已备份，提前停止当前收藏夹扫描
 
         while has_more:
             # 获取当前页内容
@@ -38,7 +36,7 @@ class FavScanner:
                 bvid = item.get('bvid')
                 title = item.get('title')
                 asset_type = item.get('type')
-
+                
                 # 确定数据库主键：视频用 bvid，专栏用 cv{id}
                 if asset_type == "article":
                     db_key = f"cv{item.get('id')}"
@@ -65,14 +63,10 @@ class FavScanner:
                 # 【情况B：正常视频处理】
                 if asset_type == "video":
                     if local_record and local_record['status'] == 0:
-                        print(f"[*] 已在库中，跳过: {title}")
-                        consecutive_existing_count += 1
-                        if consecutive_existing_count >= MAX_CONSECUTIVE_EXISTING:
-                            print(f"[*] 增量备份策略：连续发现 {MAX_CONSECUTIVE_EXISTING} 个已备份资产，停止扫描该收藏夹。")
-                            return
+                        print(f"[*] 已在库中，跳过并更新存活标记: {title}")
+                        self.db.update_last_check(db_key)
                         continue
                         
-                    consecutive_existing_count = 0 # 遇到新内容打断连续计数
                     print(f"[*] 发现新视频，准备抓取: {title}")
                     save_path = self.path_mgr.get_video_dir(fav_name, title, bvid)
 
@@ -104,14 +98,10 @@ class FavScanner:
                     article_key = f"cv{cv_id}"  # 专栏用 cv号 作为唯一标识
 
                     if local_record and local_record['status'] == 0:
-                        print(f"[*] 专栏已在库中，跳过: {title}")
-                        consecutive_existing_count += 1
-                        if consecutive_existing_count >= MAX_CONSECUTIVE_EXISTING:
-                            print(f"[*] 增量备份策略：连续发现 {MAX_CONSECUTIVE_EXISTING} 个已备份资产，停止扫描该收藏夹。")
-                            return
+                        print(f"[*] 专栏已在库中，跳过并更新存活标记: {title}")
+                        self.db.update_last_check(article_key)
                         continue
                         
-                    consecutive_existing_count = 0
                     print(f"[*] 发现新专栏图文，准备抓取: {title} ({article_key})")
                     save_path = self.path_mgr.get_article_dir(fav_name, title, cv_id)
 
@@ -132,6 +122,7 @@ class FavScanner:
             # 本页处理结束，如果未触发退出条件且 has_more=True，则页码+1继续
             page += 1
             if has_more:
+                await asyncio.sleep(1.5) # 加入防风控安全延时
                 print(f"[*] 准备拉取下一页...")
                 await asyncio.sleep(2)  # 翻页防风控保护
 

@@ -43,6 +43,11 @@ class DatabaseManager:
         ''', (bvid, title, asset_type, status, path, now, p_count))
         self.conn.commit()
         
+    def update_last_check(self, bvid):
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.cursor.execute("UPDATE assets SET last_check=? WHERE bvid=?", (now, bvid))
+        self.conn.commit()
+
     def update_status(self, bvid, status):
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.cursor.execute("UPDATE assets SET status=?, last_check=? WHERE bvid=?", (status, now, bvid))

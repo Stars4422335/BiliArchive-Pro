@@ -109,7 +109,7 @@ async def daemon_loop(config, cred, uid):
             break
 
         print("\n[*] 本轮全量扫描完毕，进入休眠阶段 (避免被封IP)...")
-        await asyncio.sleep(3600) # 休眠1小时后再次扫描
+        await asyncio.sleep(21600) # 休眠6小时后再次扫描
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="BiliArchive-Pro 启动器")
