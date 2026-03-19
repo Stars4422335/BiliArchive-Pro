@@ -99,6 +99,14 @@ async def daemon_loop(config, cred, uid):
     while True:
         for fav in target_favs:
             await scanner.scan_favorite(fav['id'], fav['name'])
+            # 若达到全局限制，提前跳出收藏夹遍历
+            if scanner.max_global_downloads and scanner.global_download_count >= scanner.max_global_downloads:
+                break
+
+        # 如果达到了 limit，则直接退出整个程序
+        if scanner.max_global_downloads and scanner.global_download_count >= scanner.max_global_downloads:
+            print("\n[+] 达到指定下载数量，任务完毕，安全退出。")
+            break
 
         print("\n[*] 本轮全量扫描完毕，进入休眠阶段 (避免被封IP)...")
         await asyncio.sleep(3600) # 休眠1小时后再次扫描
@@ -106,9 +114,16 @@ async def daemon_loop(config, cred, uid):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="BiliArchive-Pro 启动器")
     parser.add_argument("--cli", action="store_true", help="强制以纯命令行无界面模式运行")
+    parser.add_argument("--limit", type=int, help="本次运行最大下载数量，覆盖 config.yaml 的设置", default=None)
     args = parser.parse_args()
 
     config = load_config()
+    
+    # 覆盖配置中的最大下载数
+    if args.limit is not None:
+        if 'system' not in config:
+            config['system'] = {}
+        config['system']['max_downloads_per_run'] = args.limit
 
     if args.cli:
         print("[*] 正在以 CLI 守护进程模式运行...")
