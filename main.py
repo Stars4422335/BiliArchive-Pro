@@ -1,4 +1,6 @@
 import os
+# 切换工作目录到项目根目录，避免在其他路径运行脚本时相对路径解析错误
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
 import json
 import yaml
 import asyncio
