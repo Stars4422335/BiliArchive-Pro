@@ -108,6 +108,10 @@ class MetadataGenerator:
                     if img_tag:
                         img_url = img_tag.get('data-src') or img_tag.get('src')
                         if not img_url: continue
+                        if isinstance(img_url, list):
+                            img_url = str(img_url[0])
+                        else:
+                            img_url = str(img_url)
                         if img_url.startswith("//"): img_url = "https:" + img_url
                         
                         # 清理图片后缀下载原图

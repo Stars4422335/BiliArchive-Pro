@@ -8,6 +8,7 @@ system:
   cookie_path: "./data/cookie.json"
   min_disk_gb: 5               # 磁盘爆盘保护阈值 (GB)
   plex_mode: true              # 开启 Plex 兼容模式 (多P视频独立成集)
+  sync_watch_later: false      # 是否自动备份“稍后再看”列表
   check_update_on_start: true  # 每次启动时检查组件更新
   max_downloads_per_run: 0     # 每次运行最大下载视频数 (0=无限制，下载全部；建议测试时设为1)
 

@@ -37,10 +37,19 @@ python login.py
 ```
 *请使用 Bilibili 手机 App 扫描控制台出现的二维码并确认。*
 
-### 3. 启动备份
+### 3. 启动备份 (原生运行)
 ```bash
 python main.py --cli
 ```
+
+### 4. Docker 部署（推荐服务器或 NAS 使用）
+如果你有 NAS 或服务器，可以通过 Docker 轻松部署：
+
+```bash
+# 确保你已经运行了 python login.py 扫码登录，并在 data 目录下生成了 cookie.json
+docker-compose up -d
+```
+Docker 容器会自动接管所有后台下载任务，下载的数据会保存在主机的 `./downloads` 目录，数据库等位于 `./data`。
 
 ---
 
@@ -86,15 +95,15 @@ python main.py --cli
 
 ### 待开发功能
 
-- [ ] **WebUI界面** - 桌面GUI托盘模式(开发中)
-- [ ] **专栏图文下载** - 专栏文章转Markdown及图片本地化
-- [ ] **组件自动更新** - yt-dlp/ffmpeg自动检测更新
-- [ ] **Docker部署** - 一键Docker容器化部署
-- [ ] **弹幕渲染** - 弹幕下载并渲染为ASS字幕
+- [x] **WebUI界面** - 桌面GUI托盘模式(开发中)
+- [x] **专栏图文下载** - 专栏文章转Markdown及图片本地化
+- [x] **组件自动更新** - yt-dlp/ffmpeg自动检测更新
+- [x] **Docker部署** - 一键Docker容器化部署
+- [x] **弹幕渲染** - 弹幕下载并渲染为ASS字幕
 - [ ] **AI摘要** - 视频内容AI自动摘要
 - [ ] **跨平台打包** - Windows/Mac/Linux可执行文件
 - [ ] **播放列表同步** - 支持稍后再看/历史记录同步
-- [ ] **增量备份** - 仅下载新增内容的高效模式
+- [x] **增量备份** - 仅下载新增内容的高效模式
 
 ---
 

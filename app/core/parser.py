@@ -7,14 +7,13 @@ class BiliParser:
         self.credential = credential
         self.uid = uid
 
-    async def get_favorite_list(self, media_id):
+    async def get_favorite_list(self, media_id, page=1):
         """拉取指定收藏夹下的所有内容（含视频与图文）"""
-        print(f"[*] 正在拉取收藏夹 (ID: {media_id}) 列表...")
+        print(f"[*] 正在拉取收藏夹 (ID: {media_id}) 第 {page} 页...")
         try:
             # 初始化收藏夹对象
             fav = favorite_list.FavoriteList(media_id=media_id, credential=self.credential)
-            # 库更新：使用 get_content 获取内容，默认拉取第一页 (后续可加上 page=2 等参数翻页)
-            video_list = await fav.get_content(page=1)
+            video_list = await fav.get_content(page=page)
             
             parsed_list = []
             for item in video_list.get('medias', []):
@@ -31,11 +30,14 @@ class BiliParser:
                     "intro": item['intro'],
                     "pubtime": item['pubtime']
                 })
-            print(f"[+] 成功拉取 {len(parsed_list)} 个收藏记录。")
-            return parsed_list
+            print(f"[+] 成功拉取第 {page} 页 {len(parsed_list)} 个收藏记录。")
+            
+            # 返回是否还有下一页的信息 (has_more)
+            has_more = video_list.get("has_more", False)
+            return parsed_list, has_more
         except Exception as e:
             print(f"[-] 获取收藏夹失败: {e}")
-            return []
+            return [], False
 
     async def check_multi_p(self, bvid):
         """检查视频是否为多 P (分集视频)，并获取所有分P信息"""

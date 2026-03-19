@@ -1,0 +1,12 @@
+services:
+  biliarchive:
+    build: .
+    container_name: biliarchive-pro
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+      - ./downloads:/app/downloads
+      - ./bin:/app/bin
+      - ./config.yaml:/app/config.yaml
+    environment:
+      - TZ=Asia/Shanghai

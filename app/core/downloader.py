@@ -3,6 +3,8 @@ import subprocess
 import time
 import random
 import json
+import glob
+from app.core.danmaku import DanmakuConverter
 
 class Downloader:
     def __init__(self, config):
@@ -98,6 +100,14 @@ class Downloader:
             subprocess.run(cmd, check=True)
             print(f"[+] 下载顺利完成: {file_name}")
             
+            # 搜索当前目录是否有下下来的 .xml 弹幕字幕，转化为 .ass
+            xml_subs = glob.glob(os.path.join(save_dir, "*.xml"))
+            for xml_sub in xml_subs:
+                ass_path = xml_sub.rsplit('.', 1)[0] + ".ass"
+                print(f"[*] 正在将弹幕 {os.path.basename(xml_sub)} 转为 ASS 字幕...")
+                if DanmakuConverter.xml_to_ass(xml_sub, ass_path):
+                    print(f"[+成功] 弹幕转换完成: {os.path.basename(ass_path)}")
+
             # 下载成功后执行长休眠防风控
             self.random_sleep("download")
             return True

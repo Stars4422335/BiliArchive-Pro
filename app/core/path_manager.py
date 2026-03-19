@@ -13,6 +13,13 @@ class PathManager:
         fav_dir = self.sanitize_filename(fav_name)
         return os.path.join(self.root, fav_dir, safe_name)
 
+    def get_article_dir(self, fav_name, title, cv_id):
+        """生成安全的专栏图文存储目录"""
+        clean_title = self.sanitize_filename(title)
+        safe_name = self.truncate_filename(clean_title, f"cv{cv_id}")
+        fav_dir = self.sanitize_filename(fav_name)
+        return os.path.join(self.root, fav_dir, safe_name)
+
     def mark_as_deleted(self, current_path, prefix):
         """实现孤本保护：重命名文件夹添加警告前缀"""
         if not os.path.exists(current_path): 
