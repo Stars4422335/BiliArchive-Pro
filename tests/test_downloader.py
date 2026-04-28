@@ -41,6 +41,7 @@ def test_download_video_runs_ytdlp_when_free_disk_meets_threshold(monkeypatch, t
 
     monkeypatch.setattr(downloader, "convert_cookie_to_netscape", lambda cookie_path: cookie_path)
     monkeypatch.setattr(downloader, "random_sleep", lambda action_type="download": None)
+    monkeypatch.setattr(downloader, "install_media_tool", lambda name, path: path)
     monkeypatch.setattr("app.core.downloader.glob.glob", lambda pattern: [])
     monkeypatch.setattr(
         "app.core.downloader.shutil.disk_usage",
@@ -107,3 +108,56 @@ def test_download_video_uses_path_ffmpeg_when_configured_file_is_missing(monkeyp
     cmd = calls[0][0][0]
     ffmpeg_location_index = cmd.index("--ffmpeg-location") + 1
     assert cmd[ffmpeg_location_index] == "/usr/bin"
+
+
+def test_download_video_auto_installs_ytdlp_to_configured_path_when_missing_from_path(monkeypatch, tmp_path):
+    config = make_config(min_disk_gb=0)
+    config["components"]["yt-dlp"]["path"] = str(tmp_path / "bin" / "yt-dlp")
+    downloader = Downloader(config)
+    calls = []
+
+    monkeypatch.setattr(downloader, "convert_cookie_to_netscape", lambda cookie_path: cookie_path)
+    monkeypatch.setattr(downloader, "random_sleep", lambda action_type="download": None)
+    monkeypatch.setattr(downloader, "install_media_tool", lambda name, path: path if name == "yt-dlp" else None)
+    monkeypatch.setattr("app.core.downloader.glob.glob", lambda pattern: [])
+    monkeypatch.setattr("app.core.downloader.os.path.exists", lambda path: False if path == config["components"]["yt-dlp"]["path"] else True)
+    monkeypatch.setattr("app.core.downloader.shutil.which", lambda name: None if name == "yt-dlp" else "/usr/bin/ffmpeg")
+    monkeypatch.setattr("app.core.downloader.subprocess.run", lambda *args, **kwargs: calls.append((args, kwargs)))
+
+    result = downloader.download_video(
+        url="https://www.bilibili.com/video/BV1",
+        save_dir=str(tmp_path),
+        file_name="video",
+        cookie_file_path="cookie.txt",
+    )
+
+    assert result is True
+    assert calls[0][0][0][0] == config["components"]["yt-dlp"]["path"]
+
+
+def test_download_video_prints_manual_install_guidance_when_tool_resolution_fails(monkeypatch, tmp_path, capsys):
+    config = make_config(min_disk_gb=0)
+    config["components"]["yt-dlp"]["path"] = "./bin/yt-dlp"
+    downloader = Downloader(config)
+    calls = []
+
+    monkeypatch.setattr(downloader, "convert_cookie_to_netscape", lambda cookie_path: cookie_path)
+    monkeypatch.setattr(downloader, "install_media_tool", lambda name, path: None)
+    monkeypatch.setattr("app.core.downloader.os.path.exists", lambda path: False if path == "./bin/yt-dlp" else True)
+    monkeypatch.setattr("app.core.downloader.shutil.which", lambda name: None)
+    monkeypatch.setattr("app.core.downloader.subprocess.run", lambda *args, **kwargs: calls.append((args, kwargs)))
+
+    result = downloader.download_video(
+        url="https://www.bilibili.com/video/BV1",
+        save_dir=str(tmp_path),
+        file_name="video",
+        cookie_file_path="cookie.txt",
+    )
+
+    output = capsys.readouterr().out
+    assert result is False
+    assert calls == []
+    assert "yt-dlp" in output
+    assert "./bin/yt-dlp" in output
+    assert "pip install -r requirements.txt" in output
+    assert "手动" in output

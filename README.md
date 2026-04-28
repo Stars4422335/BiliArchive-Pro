@@ -31,7 +31,7 @@ BiliArchive-Pro 支持在 Windows、macOS、Linux (含 WSL) 以及各类 NAS 平
 ### 方式一：本地 Python 原生运行 (推荐开发/测试使用)
 
 **1. 环境准备**
-确保系统已安装 **Python 3.10+** 以及 [**FFmpeg**](https://ffmpeg.org/download.html) (用于音视频合并，Windows/Mac 用户可直接将 `ffmpeg.exe` 放入本项目的 `bin/` 目录下，Linux 用户可 `sudo apt install ffmpeg`)。
+确保系统已安装 **Python 3.10+**。`yt-dlp` 会随 `requirements.txt` 安装；如果 `./bin/yt-dlp` 不存在，程序会优先使用系统 PATH 中的 `yt-dlp`，仍找不到时会自动下载最新稳定版到 `./bin/yt-dlp`。音视频合并需要 [**FFmpeg**](https://ffmpeg.org/download.html)：Linux 用户可 `sudo apt install ffmpeg`，Windows/Mac 用户可将 `ffmpeg.exe` / `ffmpeg` 放入本项目的 `bin/` 目录。
 
 ```bash
 # 1. 克隆代码
@@ -136,7 +136,7 @@ python -m compileall main.py login.py app
 - 启动时可通过 `system.check_update_on_start` 控制是否检查 `yt-dlp` / `ffmpeg` 组件。
 - 扫描间隔可通过 `system.scan_interval_seconds` 配置，便于 NAS 或服务器长期运行。
 - 下载前会按 `system.min_disk_gb` 检查剩余磁盘空间，防止磁盘被视频下载占满。
-- `./bin/yt-dlp` 或 `./bin/ffmpeg` 不存在时，会自动使用系统 PATH 中已安装的工具，降低新环境启动成本。
+- `./bin/yt-dlp` 不存在时会依次使用系统 PATH、自动下载到 `./bin/yt-dlp`；`ffmpeg` 不存在时会提示按系统安装或放入 `bin/`。
 - 补齐运行依赖，并新增 pytest 基础测试覆盖核心路径、数据库、NFO 和运行配置。
 
 ---

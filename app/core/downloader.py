@@ -5,6 +5,8 @@ import random
 import json
 import glob
 import shutil
+import stat
+import requests
 from app.core.danmaku import DanmakuConverter
 
 class Downloader:
@@ -75,10 +77,60 @@ class Downloader:
             return False
         return True
 
-    def resolve_executable(self, configured_path, executable_name):
+    def install_media_tool(self, executable_name, configured_path):
+        if executable_name != "yt-dlp" or not configured_path:
+            return None
+
+        download_url = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp"
+        proxy = self.config.get("network", {}).get("github_proxy_url", "")
+        if proxy:
+            download_url = f"{proxy}{download_url}"
+
+        try:
+            os.makedirs(os.path.dirname(configured_path) or ".", exist_ok=True)
+            print(f"[*] 未找到 yt-dlp，正在自动下载最新稳定版到: {configured_path}")
+            response = requests.get(download_url, timeout=120)
+            if response.status_code != 200:
+                print(f"[-] 自动下载 yt-dlp 失败，HTTP 状态码: {response.status_code}")
+                return None
+
+            temp_path = configured_path + ".tmp"
+            with open(temp_path, "wb") as f:
+                f.write(response.content)
+            os.replace(temp_path, configured_path)
+            if os.name != "nt":
+                os.chmod(configured_path, os.stat(configured_path).st_mode | stat.S_IEXEC)
+            print(f"[+成功] yt-dlp 已安装到: {configured_path}")
+            return configured_path
+        except Exception as e:
+            print(f"[-] 自动安装 yt-dlp 失败: {e}")
+            return None
+
+    def print_manual_install_help(self, executable_name, configured_path):
+        print(f"[-] 未找到 {executable_name}，自动安装也未成功。")
+        print(f"[!] 请手动安装 {executable_name}，并确保它可执行。")
+        if executable_name == "yt-dlp":
+            print("[!] 推荐方式：运行 pip install -r requirements.txt 安装 yt-dlp，或从 https://github.com/yt-dlp/yt-dlp/releases/latest 下载最新稳定版。")
+            print(f"[!] 如使用独立文件，请将文件命名为 {os.path.basename(configured_path)} 并放到: {configured_path}")
+        elif executable_name == "ffmpeg":
+            print("[!] 推荐方式：Ubuntu/Debian 运行 sudo apt install ffmpeg；Windows/Mac 请从 ffmpeg 官网下载稳定版。")
+            print(f"[!] 如使用独立文件，请将可执行文件命名为 {os.path.basename(configured_path)} 并放到: {configured_path}")
+
+    def resolve_executable(self, configured_path, executable_name, required=True):
         if configured_path and os.path.exists(configured_path):
             return configured_path
-        return shutil.which(executable_name) or configured_path
+
+        path_executable = shutil.which(executable_name)
+        if path_executable:
+            return path_executable
+
+        installed_path = self.install_media_tool(executable_name, configured_path)
+        if installed_path:
+            return installed_path
+
+        if required:
+            self.print_manual_install_help(executable_name, configured_path)
+        return None
 
     def download_video(self, url, save_dir, file_name, cookie_file_path):
         """
@@ -97,7 +149,9 @@ class Downloader:
         output_template = os.path.join(save_dir, f"{file_name}.%(ext)s")
 
         yt_dlp_path = self.resolve_executable(self.yt_dlp_path, "yt-dlp")
-        ffmpeg_path = self.resolve_executable(self.ffmpeg_path, "ffmpeg")
+        if not yt_dlp_path:
+            return False
+        ffmpeg_path = self.resolve_executable(self.ffmpeg_path, "ffmpeg", required=False)
         ffmpeg_location = os.path.dirname(ffmpeg_path) if ffmpeg_path and os.path.dirname(ffmpeg_path) else "ffmpeg"
 
         cmd = [
