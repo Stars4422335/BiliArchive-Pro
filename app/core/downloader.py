@@ -75,6 +75,11 @@ class Downloader:
             return False
         return True
 
+    def resolve_executable(self, configured_path, executable_name):
+        if configured_path and os.path.exists(configured_path):
+            return configured_path
+        return shutil.which(executable_name) or configured_path
+
     def download_video(self, url, save_dir, file_name, cookie_file_path):
         """
         调用 yt-dlp 执行最高画质下载及转码
@@ -91,8 +96,12 @@ class Downloader:
         # 拼接输出模板 (yt-dlp 会自动替换 %(ext)s 为 mp4)
         output_template = os.path.join(save_dir, f"{file_name}.%(ext)s")
 
+        yt_dlp_path = self.resolve_executable(self.yt_dlp_path, "yt-dlp")
+        ffmpeg_path = self.resolve_executable(self.ffmpeg_path, "ffmpeg")
+        ffmpeg_location = os.path.dirname(ffmpeg_path) if ffmpeg_path and os.path.dirname(ffmpeg_path) else "ffmpeg"
+
         cmd = [
-            self.yt_dlp_path,
+            yt_dlp_path,
             # 强制最高画质视频流 + 最高音质音频流
             "-f", "bestvideo+bestaudio/best",
             "--merge-output-format", "mp4",
@@ -105,7 +114,7 @@ class Downloader:
             "--write-subs",
             "--sub-langs", "all",
             # 指向 ffmpeg 所在目录进行合并
-            "--ffmpeg-location", os.path.dirname(self.ffmpeg_path) if self.ffmpeg_path else "ffmpeg",
+            "--ffmpeg-location", ffmpeg_location,
             "-o", output_template,
             url
         ]
@@ -132,5 +141,5 @@ class Downloader:
             print(f"[-] 下载发生异常: {e}")
             return False
         except FileNotFoundError:
-            print(f"[-] 严重错误：找不到 {self.yt_dlp_path}，请检查 bin 目录下是否存在该文件。")
+            print(f"[-] 严重错误：找不到 {yt_dlp_path}，请检查 bin 目录或系统 PATH。")
             return False

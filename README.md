@@ -136,6 +136,7 @@ python -m compileall main.py login.py app
 - 启动时可通过 `system.check_update_on_start` 控制是否检查 `yt-dlp` / `ffmpeg` 组件。
 - 扫描间隔可通过 `system.scan_interval_seconds` 配置，便于 NAS 或服务器长期运行。
 - 下载前会按 `system.min_disk_gb` 检查剩余磁盘空间，防止磁盘被视频下载占满。
+- `./bin/yt-dlp` 或 `./bin/ffmpeg` 不存在时，会自动使用系统 PATH 中已安装的工具，降低新环境启动成本。
 - 补齐运行依赖，并新增 pytest 基础测试覆盖核心路径、数据库、NFO 和运行配置。
 
 ---
