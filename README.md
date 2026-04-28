@@ -112,13 +112,31 @@ python login.py
 ```bash
 python main.py --cli
 ```
-系统会自动拉取所有的收藏夹并开始高并发下载，本轮任务结束后会进入休眠状态（默认 1 小时后再次扫描），适合搭配 `tmux`、`screen` 或 `systemd` 长期挂机。
+系统会自动拉取所有的收藏夹并开始下载，本轮任务结束后会进入休眠状态（默认 21600 秒后再次扫描，可通过 `config.yaml` 的 `system.scan_interval_seconds` 调整），适合搭配 `tmux`、`screen` 或 `systemd` 长期挂机。
 
 ### 3. 测试与限制下载数量
 如果你只是想测试一下环境是否跑通，可以使用 `--limit` 参数限制本次运行最大下载数（到达指定数量后程序会自动安全退出）：
 ```bash
 python main.py --cli --limit 3
 ```
+
+### 4. 开发测试
+如果你要参与开发或验证改动，可以安装开发依赖并运行测试：
+```bash
+pip install -r requirements-dev.txt
+python -m pytest tests
+python -m compileall main.py login.py app
+```
+
+---
+
+## 🧾 最新改进
+
+- 新增“稍后再看”和 UP 主合集/列表同步入口，可通过 `system.sync_watch_later` 和 `sync_collections` 配置启用。
+- 启动时可通过 `system.check_update_on_start` 控制是否检查 `yt-dlp` / `ffmpeg` 组件。
+- 扫描间隔可通过 `system.scan_interval_seconds` 配置，便于 NAS 或服务器长期运行。
+- 下载前会按 `system.min_disk_gb` 检查剩余磁盘空间，防止磁盘被视频下载占满。
+- 补齐运行依赖，并新增 pytest 基础测试覆盖核心路径、数据库、NFO 和运行配置。
 
 ---
 
@@ -140,6 +158,7 @@ python main.py --cli --limit 3
 - [x] **智能路径管理**：跨平台安全的路径名非法字符过滤与防爆长路径自动截断机制。
 
 ### 🟡 扩展功能 (规划中/开发中)
+- [ ] **全量同步关注UP主**：新增配置字段，支持全量同步账号中已关注UP主的全部视频与图文。
 - [ ] **跨平台打包**：使用 PyInstaller 打包生成 Windows/Mac/Linux 独立可执行文件（免配 Python 环境）。
 - [ ] **WebUI 管理面板**：提供现代化的可视化网页端，用于查看下载进度、管理数据库资产、修改配置。
 - [ ] **播放列表同步**：支持同步“稍后再看”列表及历史观看记录。

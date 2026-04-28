@@ -4,6 +4,7 @@ import time
 import random
 import json
 import glob
+import shutil
 from app.core.danmaku import DanmakuConverter
 
 class Downloader:
@@ -62,12 +63,27 @@ class Downloader:
         print(f"[*] 风控保护：随机休眠 {delay:.1f} 秒...")
         time.sleep(delay)
 
+    def has_enough_disk_space(self, save_dir):
+        min_disk_gb = self.config.get('system', {}).get('min_disk_gb', 0)
+        if not min_disk_gb:
+            return True
+
+        usage = shutil.disk_usage(save_dir)
+        free_gb = usage.free / (1024 ** 3)
+        if free_gb < min_disk_gb:
+            print(f"[-] 磁盘空间不足：剩余 {free_gb:.2f}GB，低于配置阈值 {min_disk_gb}GB。")
+            return False
+        return True
+
     def download_video(self, url, save_dir, file_name, cookie_file_path):
         """
         调用 yt-dlp 执行最高画质下载及转码
         """
         if not os.path.exists(save_dir):
             os.makedirs(save_dir, exist_ok=True)
+
+        if not self.has_enough_disk_space(save_dir):
+            return False
 
         # 转换 cookie 格式
         netscape_cookie = self.convert_cookie_to_netscape(cookie_file_path)

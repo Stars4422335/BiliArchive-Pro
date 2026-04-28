@@ -9,8 +9,16 @@ system:
   min_disk_gb: 5               # 磁盘爆盘保护阈值 (GB)
   plex_mode: true              # 开启 Plex 兼容模式 (多P视频独立成集)
   sync_watch_later: false      # 是否自动备份“稍后再看”列表
-  check_update_on_start: true  # 每次启动时检查组件更新
+  check_update_on_start: false # 每次启动时检查组件更新
+  scan_interval_seconds: 21600 # 每轮扫描结束后的休眠时间 (秒)
   max_downloads_per_run: 0     # 每次运行最大下载视频数 (0=无限制，下载全部；建议测试时设为1)
+
+sync_collections:
+  # 此处填入您想要下载的UP主“合集/列表”(Season/Series)
+  # 可以通过填写 season_id 来实现，例如某个合集的链接是：space.bilibili.com/12345/channel/collectiondetail?sid=67890
+  # 那么 id 就是 67890 (如果有多个请往下换行添加)
+  # - id: 67890
+  #   name: "某个UP主的精华合集"
 
 network:
   # GitHub 下载加速代理前缀。留空表示直连。

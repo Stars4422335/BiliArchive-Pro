@@ -14,6 +14,7 @@ register_client("httpx", HTTPXClient, {})
 from app.core.database_manager import DatabaseManager
 from app.core.path_manager import PathManager
 from app.scheduler.scanner import FavScanner
+from app.scheduler.updater import ComponentUpdater
 
 def load_config():
     """读取用户配置"""
@@ -60,6 +61,9 @@ async def daemon_loop(config, cred, uid):
     """主循环守护进程"""
     print("\n=== 🚀 BiliArchive-Pro 核心引擎启动 ===")
     
+    if config.get('system', {}).get('check_update_on_start', False):
+        await ComponentUpdater(config).check_all()
+
     # 初始化核心组件
     db = DatabaseManager(config['system']['db_path'])
     path_mgr = PathManager(config['system']['download_path'], config['system']['plex_mode'])
@@ -103,13 +107,26 @@ async def daemon_loop(config, cred, uid):
             if scanner.max_global_downloads and scanner.global_download_count >= scanner.max_global_downloads:
                 break
 
+        # 接续处理稍后再看
+        if config.get('system', {}).get('sync_watch_later', False):
+            if not scanner.max_global_downloads or scanner.global_download_count < scanner.max_global_downloads:
+                await scanner.scan_watch_later()
+
+        # 接续处理稍后再看
+        sync_collections = config.get('sync_collections', [])
+        if sync_collections:
+            for coll in sync_collections:
+                if not scanner.max_global_downloads or scanner.global_download_count < scanner.max_global_downloads:
+                    await scanner.scan_collection(coll['id'], coll.get('name', f"合集_{coll['id']}"))
+
         # 如果达到了 limit，则直接退出整个程序
         if scanner.max_global_downloads and scanner.global_download_count >= scanner.max_global_downloads:
             print("\n[+] 达到指定下载数量，任务完毕，安全退出。")
             break
 
-        print("\n[*] 本轮全量扫描完毕，进入休眠阶段 (避免被封IP)...")
-        await asyncio.sleep(21600) # 休眠6小时后再次扫描
+        scan_interval = config.get('system', {}).get('scan_interval_seconds', 21600)
+        print(f"\n[*] 本轮全量扫描完毕，进入休眠阶段 ({scan_interval} 秒后再次扫描)...")
+        await asyncio.sleep(scan_interval)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="BiliArchive-Pro 启动器")
