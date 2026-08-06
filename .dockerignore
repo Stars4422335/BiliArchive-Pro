@@ -1,0 +1,35 @@
+.git
+.github
+.gitignore
+.dockerignore
+
+# Local credentials, databases, downloads, logs, and downloaded tools
+.env
+config.local.yaml
+data
+downloads
+logs
+bin
+
+# Local environments and generated Python artifacts
+venv
+.venv
+env
+__pycache__
+*.py[cod]
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+**/.pytest_cache
+.coverage
+htmlcov
+
+# Development and release-only files
+tests
+build.spec
+BiliArchive-Pro-v*.zip
+本地任务计划与执行表.md
+
+# Host operating-system files
+.DS_Store
+Thumbs.db

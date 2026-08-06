@@ -2,7 +2,8 @@
 
 > **专业的 Bilibili 个人数字资产全量备份系统**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![Release: v1.1.3](https://img.shields.io/badge/release-v1.1.3-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.1.3)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 
 **BiliArchive-Pro** 旨在为 B 站深度用户提供一套稳定、安全且符合影视库管理规范（如 Plex、Jellyfin、Emby）的本地自动化备份方案。它不仅是一个支持最高 4K/HDR 画质的下载器，更是一个智能的**个人数字图书馆管理员**。
@@ -18,9 +19,9 @@
 - 🛡️ **首创数字资产保护逻辑**：
   - **墓碑机制 (Tombstone)**：扫描到收藏夹中已被 B 站删除的失效视频时，在本地生成 NFO 占位符，记录遗失的元数据。
   - **孤本保护**：如果本地已下载好的视频后来被源端删除，本地资产会自动打标锁定（如添加 `[源端已删]` 前缀），绝不发生误覆盖或同步删除。
-- ⚡ **智能增量与防风控**：采用“连续重复熔断”的增量扫描策略，仅下载新增内容，大幅减少 API 请求；内置随机休眠机制，有效防止账号被风控。
+- ⚡ **周期巡检与防风控**：按配置周期全量巡检收藏夹，通过本地数据库跳过已归档资源并更新存活时间；翻页和下载后加入休眠，降低请求频率。
 - 💬 **弹幕智能渲染**：自动下载 B 站原生 XML 弹幕，并利用内置渲染引擎实时转换为各大播放器通用的 `.ass` 高级字幕格式。
-- 🔄 **组件全自动更新**：启动时自动检测并从 GitHub 拉取更新 `yt-dlp` 及 `ffmpeg` 环境，自带网络加速镜像配置。
+- 🔄 **可选组件检查**：可按 `auto` / `notify` / `off` 策略检查 `yt-dlp`；自动更新前必须通过 GitHub 官方 SHA256 校验，同时验证系统或配置路径中的 FFmpeg 是否可用。
 
 ---
 
@@ -31,7 +32,7 @@ BiliArchive-Pro 支持在 Windows、macOS、Linux (含 WSL) 以及各类 NAS 平
 ### 方式一：本地 Python 原生运行 (推荐开发/测试使用)
 
 **1. 环境准备**
-确保系统已安装 **Python 3.10+**。`yt-dlp` 会随 `requirements.txt` 安装；如果 `./bin/yt-dlp` 不存在，程序会优先使用系统 PATH 中的 `yt-dlp`，仍找不到时会自动下载最新稳定版到 `./bin/yt-dlp`。音视频合并需要 [**FFmpeg**](https://ffmpeg.org/download.html)：Linux 用户可 `sudo apt install ffmpeg`，Windows/Mac 用户可将 `ffmpeg.exe` / `ffmpeg` 放入本项目的 `bin/` 目录。
+确保系统已安装 **Python 3.10+**。`yt-dlp` 会随 `requirements.txt` 安装；程序优先使用配置路径中的 `yt-dlp`（Windows 同时识别 `.exe`），再查找系统 PATH，仍找不到时只给出手动安装提示。音视频合并需要 [**FFmpeg**](https://ffmpeg.org/download.html)：Linux 用户可 `sudo apt install ffmpeg`，Windows/Mac 用户可将 `ffmpeg.exe` / `ffmpeg` 放入本项目的 `bin/` 目录。
 
 ```bash
 # 1. 克隆代码
@@ -71,22 +72,27 @@ docker-compose up -d
 ```
 启动后，容器会自动接管所有后台下载任务。你可以通过 `docker-compose logs -f` 查看实时运行日志。
 
-> **持久化说明**：Docker 会将 `data/` (数据库与凭证)、`downloads/` (视频与专栏库)、`bin/` (组件工具) 以及 `config.yaml` 完美映射到宿主机的项目目录下，随时可以迁移备份。
+> **持久化说明**：Docker 会将 `data/` (数据库与凭证)、`downloads/` (视频与专栏库)、`bin/` (组件工具) 以及 `config.yaml` 映射到宿主机的项目目录下，便于迁移备份。
 
 ---
 
 ## ⚙️ 配置指南 (`config.yaml`)
 
-项目根目录下的 `config.yaml` 是整个系统的核心控制台。首次运行前，建议根据个人需求进行微调：
+项目根目录下的 `config.yaml` 是整个系统的默认配置模板。首次运行前，建议根据个人需求进行微调：
 
 ```yaml
 system:
   download_path: "./downloads"       # 媒体库保存位置
-  plex_mode: true                    # 开启后，多P视频会独立建文件夹，完美适配 Plex/Jellyfin
+  plex_mode: true                    # 开启后，多P视频会独立建文件夹，适配 Plex/Jellyfin
+  check_update_on_start: false       # 是否在启动时执行组件检查策略
   max_downloads_per_run: 0           # 0代表无限制。若只想测试，可改为 5
 
 network:
   github_proxy_url: "https://mirror.ghproxy.com/" # 解决国内服务器下载 yt-dlp 失败的问题
+
+components:
+  yt-dlp:
+    strategy: "auto"                # 校验后更新；notify 仅提醒；off 关闭
 
 favorites:
   # 留空此项将【自动拉取并备份您账号下的所有收藏夹】！
@@ -94,6 +100,10 @@ favorites:
   # - id: 12345678
   #   name: "指定收藏夹名称"
 ```
+
+个人测试配置请写入根目录的 `config.local.yaml`。程序会在读取 `config.yaml` 后递归合并本地配置，其中列表和普通值以本地文件为准。该文件默认被 Git 和 Docker 构建忽略，适合保存本机收藏夹、开关和路径设置。
+
+> `config.local.yaml` 只用于本地覆盖，不应放入发布包。Docker 部署应通过挂载 `config.yaml` 或其他部署侧配置管理方式提供运行配置。
 
 ---
 
@@ -105,7 +115,8 @@ favorites:
 python login.py
 ```
 - 支持**二维码登录**（推荐，最稳定安全）和**手机号短信登录**。
-- 登录凭证加密存储于 `./data/cookie.json`，不会上传或泄露。
+- 登录凭证以明文 JSON 保存在 `./data/cookie.json`，程序采用原子写入并尽力限制文件权限，但不会进行加密。
+- `data/` 已被 Git 和 Docker 构建忽略。请勿分享该文件；若凭据曾进入镜像、压缩包或公共位置，应立即重新登录使旧凭据失效。
 
 ### 2. 启动守护进程
 获取凭证后，即可启动后台扫描与下载引擎：
@@ -130,13 +141,24 @@ python -m compileall main.py login.py app
 
 ---
 
-## 🧾 最新改进
+## 🧾 最新改进（v1.1.3）
+
+- 项目许可证声明统一为 GPLv3。
+- 新增 `config.local.yaml` 本地覆盖机制，个人测试配置不再污染受跟踪模板。
+- Docker 改为运行文件白名单复制，并通过 `.dockerignore` 排除凭据、数据库、下载内容、本地环境和任务记录。
+- 登录凭据使用原子写入；每次下载使用独立的 Secure 临时 Cookie，结束后按所有权清理，并拒绝通过 HTTP 发送凭据。
+- `yt-dlp` 不再在下载流程中隐式安装；显式自动更新必须验证 GitHub 官方 SHA256，校验失败时保留现有文件。
+- 增加 Windows/Linux 的 GitHub Actions 测试、编译检查和 Docker 构建检查。
+- 精简尚未使用的 GUI、浏览器和调度依赖，降低安装与镜像体积。
+
+### v1.1.2 及此前改进
 
 - 新增“稍后再看”和 UP 主合集/列表同步入口，可通过 `system.sync_watch_later` 和 `sync_collections` 配置启用。
 - 启动时可通过 `system.check_update_on_start` 控制是否检查 `yt-dlp` / `ffmpeg` 组件。
 - 扫描间隔可通过 `system.scan_interval_seconds` 配置，便于 NAS 或服务器长期运行。
 - 下载前会按 `system.min_disk_gb` 检查剩余磁盘空间，防止磁盘被视频下载占满。
-- `./bin/yt-dlp` 不存在时会依次使用系统 PATH、自动下载到 `./bin/yt-dlp`；`ffmpeg` 不存在时会提示按系统安装或放入 `bin/`。
+- 下载时依次查找配置路径和系统 PATH，不会隐式下载可执行文件；组件自动更新只在启用启动检查且策略为 `auto` 时执行。
+- `ffmpeg` 不存在时会提示按系统安装或配置本地路径，不会自动下载。
 - 补齐运行依赖，并新增 pytest 基础测试覆盖核心路径、数据库、NFO 和运行配置。
 
 ---
@@ -149,13 +171,13 @@ python -m compileall main.py login.py app
 - [x] **全自动引擎**：无头守护进程，自动拉取账号下所有收藏夹，并支持配置文件指定拉取。
 - [x] **双重登录机制**：终端二维码扫码登录 + 手机号短信验证码登录。
 - [x] **最高画质下载**：基于 `yt-dlp` 的 4K/HDR 视频与高质量音频自动抓取及合并。
-- [x] **Plex/Jellyfin 生态适配**：自动生成标准 `movie.nfo` 元数据、下载高清封面图、提取 UP 主信息。
+- [x] **Plex/Jellyfin 元数据**：生成与媒体标题对应的 `.nfo` 元数据、下载封面图并记录 UP 主信息。
 - [x] **专栏图文支持**：自动识别收藏夹中的专栏文章，抓取正文转为 `Markdown`，并将网络图片本地化下载保存。
 - [x] **弹幕渲染器**：内置 `DanmakuConverter`，自动将 B 站 XML 弹幕渲染为各大播放器原生支持的高级 `.ass` 字幕。
 - [x] **资产保护机制**：独立实现的“墓碑机制（Tombstone）”与“孤本保护”，防止源端失效导致本地资产连带损失。
-- [x] **增量扫描策略**：自动记忆已下载资产，支持“连续重复熔断”机制（遇到连续10个已下载视频即停止翻页），彻底告别每次全量扫描的低效与风控风险。
-- [x] **组件自动更新**：内建热更新模块，每次启动前自动对比 GitHub 检查并升级 `yt-dlp` 与 `ffmpeg`。
-- [x] **Docker 容器化**：提供包含完整环境的轻量级镜像与 `docker-compose.yml` 一键部署方案，完美解决依赖问题。
+- [x] **周期全量巡检**：自动记忆已归档资产，扫描时跳过重复下载并更新 `last_check`，默认每 6 小时重新巡检。
+- [x] **组件环境检查**：按策略检查 `yt-dlp`，自动更新前验证官方 SHA256；FFmpeg 只检查系统 PATH 或配置路径，不自动下载更新。
+- [x] **Docker 容器化**：提供包含 FFmpeg 与 Python 运行环境的镜像及 `docker-compose.yml` 部署方案。
 - [x] **智能路径管理**：跨平台安全的路径名非法字符过滤与防爆长路径自动截断机制。
 
 ### 🟡 扩展功能 (规划中/开发中)
@@ -174,6 +196,6 @@ python -m compileall main.py login.py app
 
 ## 📄 许可证
 
-本项目采用 [MIT License](LICENSE) 授权。
+本项目采用 [GNU General Public License v3.0](LICENSE) 授权。分发修改版时必须继续使用 GPLv3 并提供对应源代码。
 
 > **免责声明**：本项目仅供个人学习、技术研究及私有数字资产备份使用。请严格遵守 Bilibili 用户协议，尊重 UP 主版权，**严禁将抓取的内容用于任何商业用途或进行二次非法传播**。因使用不当造成的任何法律责任由使用者自行承担。

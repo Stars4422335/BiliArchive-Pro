@@ -21,13 +21,13 @@ sync_collections:
   #   name: "某个UP主的精华合集"
 
 network:
-  # GitHub 下载加速代理前缀。留空表示直连。
+  # GitHub 组件下载代理前缀。官方 SHA256 校验文件始终直连获取；留空表示全部直连。
   # 示例: "https://mirror.ghproxy.com/"
   github_proxy_url: "" 
 
 components:
   yt-dlp:
-    strategy: "auto"           # auto (自动), notify (仅提醒), off (关闭)
+    strategy: "auto"           # auto (校验后更新), notify (仅提醒), off (关闭)
     path: "./bin/yt-dlp"
   ffmpeg:
     strategy: "notify"

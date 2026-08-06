@@ -81,3 +81,41 @@ def test_daemon_loop_uses_configured_scan_interval(monkeypatch):
         asyncio.run(main.daemon_loop(base_config(), cred=object(), uid=1))
 
     assert slept == [7]
+
+
+def test_load_config_merges_local_overrides(monkeypatch, tmp_path):
+    (tmp_path / "config.yaml").write_text(
+        """
+system:
+  sync_watch_later: false
+  scan_interval_seconds: 21600
+favorites: []
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "config.local.yaml").write_text(
+        """
+system:
+  sync_watch_later: true
+favorites:
+  - id: 9999999999
+    name: TestFav
+""".strip(),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    config = main.load_config()
+
+    assert config["system"]["sync_watch_later"] is True
+    assert config["system"]["scan_interval_seconds"] == 21600
+    assert config["favorites"] == [{"id": 9999999999, "name": "TestFav"}]
+
+
+def test_load_config_rejects_non_mapping_local_config(monkeypatch, tmp_path):
+    (tmp_path / "config.yaml").write_text("system: {}\n", encoding="utf-8")
+    (tmp_path / "config.local.yaml").write_text("- invalid\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(ValueError, match="顶层必须是映射结构"):
+        main.load_config()

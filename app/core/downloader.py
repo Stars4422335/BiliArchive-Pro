@@ -5,9 +5,13 @@ import random
 import json
 import glob
 import shutil
-import stat
-import requests
+import tempfile
+import threading
+from urllib.parse import urlparse
 from app.core.danmaku import DanmakuConverter
+from app.core.secure_file import atomic_write_text
+
+IS_WINDOWS = os.name == "nt"
 
 class Downloader:
     def __init__(self, config):
@@ -15,10 +19,12 @@ class Downloader:
         # 从配置中读取组件路径
         self.yt_dlp_path = config['components']['yt-dlp']['path']
         self.ffmpeg_path = config['components']['ffmpeg']['path']
-        self.netscape_cookie_path = "./data/cookie_netscape.txt"
+        self._owned_temporary_cookies = set()
+        self._temporary_cookie_lock = threading.Lock()
 
     def convert_cookie_to_netscape(self, json_cookie_path):
         """将 JSON 格式的 cookie 转换为 Netscape 格式供 yt-dlp 使用"""
+        temporary_cookie_path = None
         try:
             with open(json_cookie_path, 'r', encoding='utf-8') as f:
                 cookie_data = json.load(f)
@@ -42,18 +48,45 @@ class Downloader:
                 value = cookie_data.get(json_key, '')
                 if value:
                     # Netscape 格式: domain, flag, path, secure, expiration, name, value
-                    line = f"{domain}\tTRUE\t/\tFALSE\t0\t{netscape_name}\t{value}"
+                    line = f"{domain}\tTRUE\t/\tTRUE\t0\t{netscape_name}\t{value}"
                     netscape_lines.append(line)
-            
-            # 写入文件
-            with open(self.netscape_cookie_path, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(netscape_lines))
-            
-            return self.netscape_cookie_path
+
+            fd, temporary_cookie_path = tempfile.mkstemp(
+                prefix="biliarchive-cookie-",
+                suffix=".txt",
+            )
+            os.close(fd)
+            atomic_write_text(temporary_cookie_path, '\n'.join(netscape_lines) + '\n')
+            owned_path = os.path.abspath(temporary_cookie_path)
+            with self._temporary_cookie_lock:
+                self._owned_temporary_cookies.add(owned_path)
+            return owned_path
             
         except Exception as e:
+            if temporary_cookie_path:
+                try:
+                    os.remove(temporary_cookie_path)
+                except FileNotFoundError:
+                    pass
+                except OSError:
+                    pass
             print(f"[-] Cookie 转换失败: {e}")
             return json_cookie_path  # 失败时返回原路径，让 yt-dlp 尝试
+
+    def _remove_temporary_cookie(self, cookie_path):
+        if not cookie_path:
+            return
+        owned_path = os.path.abspath(cookie_path)
+        with self._temporary_cookie_lock:
+            if owned_path not in self._owned_temporary_cookies:
+                return
+            self._owned_temporary_cookies.remove(owned_path)
+        try:
+            os.remove(owned_path)
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            print(f"[!] 临时 Cookie 文件清理失败: {e}")
 
     def random_sleep(self, action_type="download"):
         """【防线1】防封号与风控随机抖动"""
@@ -77,37 +110,8 @@ class Downloader:
             return False
         return True
 
-    def install_media_tool(self, executable_name, configured_path):
-        if executable_name != "yt-dlp" or not configured_path:
-            return None
-
-        download_url = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp"
-        proxy = self.config.get("network", {}).get("github_proxy_url", "")
-        if proxy:
-            download_url = f"{proxy}{download_url}"
-
-        try:
-            os.makedirs(os.path.dirname(configured_path) or ".", exist_ok=True)
-            print(f"[*] 未找到 yt-dlp，正在自动下载最新稳定版到: {configured_path}")
-            response = requests.get(download_url, timeout=120)
-            if response.status_code != 200:
-                print(f"[-] 自动下载 yt-dlp 失败，HTTP 状态码: {response.status_code}")
-                return None
-
-            temp_path = configured_path + ".tmp"
-            with open(temp_path, "wb") as f:
-                f.write(response.content)
-            os.replace(temp_path, configured_path)
-            if os.name != "nt":
-                os.chmod(configured_path, os.stat(configured_path).st_mode | stat.S_IEXEC)
-            print(f"[+成功] yt-dlp 已安装到: {configured_path}")
-            return configured_path
-        except Exception as e:
-            print(f"[-] 自动安装 yt-dlp 失败: {e}")
-            return None
-
     def print_manual_install_help(self, executable_name, configured_path):
-        print(f"[-] 未找到 {executable_name}，自动安装也未成功。")
+        print(f"[-] 未找到 {executable_name}，未执行自动安装。")
         print(f"[!] 请手动安装 {executable_name}，并确保它可执行。")
         if executable_name == "yt-dlp":
             print("[!] 推荐方式：运行 pip install -r requirements.txt 安装 yt-dlp，或从 https://github.com/yt-dlp/yt-dlp/releases/latest 下载最新稳定版。")
@@ -117,16 +121,17 @@ class Downloader:
             print(f"[!] 如使用独立文件，请将可执行文件命名为 {os.path.basename(configured_path)} 并放到: {configured_path}")
 
     def resolve_executable(self, configured_path, executable_name, required=True):
-        if configured_path and os.path.exists(configured_path):
-            return configured_path
+        if configured_path:
+            configured_candidates = [configured_path]
+            if IS_WINDOWS and not configured_path.lower().endswith(".exe"):
+                configured_candidates.append(configured_path + ".exe")
+            for candidate in configured_candidates:
+                if os.path.exists(candidate):
+                    return candidate
 
         path_executable = shutil.which(executable_name)
         if path_executable:
             return path_executable
-
-        installed_path = self.install_media_tool(executable_name, configured_path)
-        if installed_path:
-            return installed_path
 
         if required:
             self.print_manual_install_help(executable_name, configured_path)
@@ -136,6 +141,11 @@ class Downloader:
         """
         调用 yt-dlp 执行最高画质下载及转码
         """
+        parsed_url = urlparse(url)
+        if parsed_url.scheme.lower() != "https" or not parsed_url.netloc:
+            print("[-] 拒绝非 HTTPS 视频 URL。")
+            return False
+
         if not os.path.exists(save_dir):
             os.makedirs(save_dir, exist_ok=True)
 
@@ -145,55 +155,48 @@ class Downloader:
         # 转换 cookie 格式
         netscape_cookie = self.convert_cookie_to_netscape(cookie_file_path)
 
-        # 拼接输出模板 (yt-dlp 会自动替换 %(ext)s 为 mp4)
-        output_template = os.path.join(save_dir, f"{file_name}.%(ext)s")
-
-        yt_dlp_path = self.resolve_executable(self.yt_dlp_path, "yt-dlp")
-        if not yt_dlp_path:
-            return False
-        ffmpeg_path = self.resolve_executable(self.ffmpeg_path, "ffmpeg", required=False)
-        ffmpeg_location = os.path.dirname(ffmpeg_path) if ffmpeg_path and os.path.dirname(ffmpeg_path) else "ffmpeg"
-
-        cmd = [
-            yt_dlp_path,
-            # 强制最高画质视频流 + 最高音质音频流
-            "-f", "bestvideo+bestaudio/best",
-            "--merge-output-format", "mp4",
-            # 注入大会员 Cookie
-            "--cookies", netscape_cookie,
-            # 抓取元数据、封面、弹幕/字幕
-            "--write-info-json",
-            "--write-thumbnail",
-            "--convert-thumbnails", "jpg",
-            "--write-subs",
-            "--sub-langs", "all",
-            # 指向 ffmpeg 所在目录进行合并
-            "--ffmpeg-location", ffmpeg_location,
-            "-o", output_template,
-            url
-        ]
-
-        print(f"\n[>>>] 开始执行下载任务: {file_name}")
         try:
-            # 执行下载，控制台会实时输出进度条
-            subprocess.run(cmd, check=True)
-            print(f"[+] 下载顺利完成: {file_name}")
-            
-            # 搜索当前目录是否有下下来的 .xml 弹幕字幕，转化为 .ass
-            xml_subs = glob.glob(os.path.join(save_dir, "*.xml"))
-            for xml_sub in xml_subs:
-                ass_path = xml_sub.rsplit('.', 1)[0] + ".ass"
-                print(f"[*] 正在将弹幕 {os.path.basename(xml_sub)} 转为 ASS 字幕...")
-                if DanmakuConverter.xml_to_ass(xml_sub, ass_path):
-                    print(f"[+成功] 弹幕转换完成: {os.path.basename(ass_path)}")
+            output_template = os.path.join(save_dir, f"{file_name}.%(ext)s")
+            yt_dlp_path = self.resolve_executable(self.yt_dlp_path, "yt-dlp")
+            if not yt_dlp_path:
+                return False
+            ffmpeg_path = self.resolve_executable(self.ffmpeg_path, "ffmpeg", required=False)
+            ffmpeg_location = os.path.dirname(ffmpeg_path) if ffmpeg_path and os.path.dirname(ffmpeg_path) else "ffmpeg"
 
-            # 下载成功后执行长休眠防风控
-            self.random_sleep("download")
-            return True
-            
-        except subprocess.CalledProcessError as e:
-            print(f"[-] 下载发生异常: {e}")
-            return False
-        except FileNotFoundError:
-            print(f"[-] 严重错误：找不到 {yt_dlp_path}，请检查 bin 目录或系统 PATH。")
-            return False
+            cmd = [
+                yt_dlp_path,
+                "-f", "bestvideo+bestaudio/best",
+                "--merge-output-format", "mp4",
+                "--cookies", netscape_cookie,
+                "--write-info-json",
+                "--write-thumbnail",
+                "--convert-thumbnails", "jpg",
+                "--write-subs",
+                "--sub-langs", "all",
+                "--ffmpeg-location", ffmpeg_location,
+                "-o", output_template,
+                url
+            ]
+
+            print(f"\n[>>>] 开始执行下载任务: {file_name}")
+            try:
+                subprocess.run(cmd, check=True)
+                print(f"[+] 下载顺利完成: {file_name}")
+
+                xml_subs = glob.glob(os.path.join(save_dir, "*.xml"))
+                for xml_sub in xml_subs:
+                    ass_path = xml_sub.rsplit('.', 1)[0] + ".ass"
+                    print(f"[*] 正在将弹幕 {os.path.basename(xml_sub)} 转为 ASS 字幕...")
+                    if DanmakuConverter.xml_to_ass(xml_sub, ass_path):
+                        print(f"[+成功] 弹幕转换完成: {os.path.basename(ass_path)}")
+
+                self.random_sleep("download")
+                return True
+            except subprocess.CalledProcessError as e:
+                print(f"[-] 下载发生异常: {e}")
+                return False
+            except FileNotFoundError:
+                print(f"[-] 严重错误：找不到 {yt_dlp_path}，请检查 bin 目录或系统 PATH。")
+                return False
+        finally:
+            self._remove_temporary_cookie(netscape_cookie)

@@ -7,6 +7,7 @@ import asyncio
 import argparse
 from bilibili_api import register_client, Credential, user
 from bilibili_api.clients.HTTPXClient import HTTPXClient
+from app import __version__
 
 # 关键：注册 httpx 客户端
 register_client("httpx", HTTPXClient, {})
@@ -16,13 +17,38 @@ from app.core.path_manager import PathManager
 from app.scheduler.scanner import FavScanner
 from app.scheduler.updater import ComponentUpdater
 
+def _load_yaml_mapping(path):
+    with open(path, "r", encoding="utf-8") as f:
+        config = yaml.safe_load(f) or {}
+    if not isinstance(config, dict):
+        raise ValueError(f"配置文件顶层必须是映射结构: {path}")
+    return config
+
+
+def _merge_config(base, overrides):
+    """递归合并配置；字典递归处理，列表和标量由本地配置覆盖。"""
+    for key, value in overrides.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            _merge_config(base[key], value)
+        else:
+            base[key] = value
+    return base
+
+
 def load_config():
-    """读取用户配置"""
+    """读取默认配置，并应用不受 Git 管理的本地覆盖配置。"""
     if not os.path.exists("config.yaml"):
         print("[-] 找不到 config.yaml！请确保在项目根目录执行。")
-        exit(1)
-    with open("config.yaml", "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        raise SystemExit(1)
+
+    config = _load_yaml_mapping("config.yaml")
+    local_config_path = "config.local.yaml"
+    if os.path.exists(local_config_path):
+        local_config = _load_yaml_mapping(local_config_path)
+        _merge_config(config, local_config)
+        print(f"[*] 已加载本地配置覆盖: {local_config_path}")
+
+    return config
 
 async def check_cookie(cookie_path):
     """验证登录凭证健康度"""
@@ -59,7 +85,7 @@ async def check_cookie(cookie_path):
 
 async def daemon_loop(config, cred, uid):
     """主循环守护进程"""
-    print("\n=== 🚀 BiliArchive-Pro 核心引擎启动 ===")
+    print(f"\n=== 🚀 BiliArchive-Pro v{__version__} 核心引擎启动 ===")
     
     if config.get('system', {}).get('check_update_on_start', False):
         await ComponentUpdater(config).check_all()
@@ -130,6 +156,7 @@ async def daemon_loop(config, cred, uid):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="BiliArchive-Pro 启动器")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("--cli", action="store_true", help="强制以纯命令行无界面模式运行")
     parser.add_argument("--limit", type=int, help="本次运行最大下载数量，覆盖 config.yaml 的设置", default=None)
     args = parser.parse_args()

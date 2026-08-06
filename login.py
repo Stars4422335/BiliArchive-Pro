@@ -9,6 +9,7 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 from bilibili_api import register_client
 from bilibili_api.clients.HTTPXClient import HTTPXClient
 from bilibili_api.login_v2 import QrCodeLogin, QrCodeLoginEvents
+from app.core.secure_file import atomic_write_text
 
 # 关键：注册 httpx 客户端
 register_client("httpx", HTTPXClient)
@@ -23,9 +24,8 @@ async def save_credential(credential):
         "ac_time_value": credential.ac_time_value
     }
     
-    os.makedirs("./data", exist_ok=True)
-    with open("./data/cookie.json", "w", encoding="utf-8") as f:
-        json.dump(cookie_data, f, indent=4)
+    serialized_cookie = json.dumps(cookie_data, ensure_ascii=False, indent=4) + "\n"
+    atomic_write_text("./data/cookie.json", serialized_cookie)
         
     print("\n" + "=" * 60)
     print("[+] 登录成功！凭据已保存至 ./data/cookie.json")

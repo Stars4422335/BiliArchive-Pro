@@ -1,3 +1,4 @@
+import os
 import xml.etree.ElementTree as ET
 
 from app.core.database_manager import DatabaseManager
@@ -9,11 +10,13 @@ def test_path_manager_sanitizes_and_truncates_video_directory():
     path_mgr = PathManager("/archive")
 
     path = path_mgr.get_video_dir("收藏/夹", "很长" * 40 + ":标题", "BV123")
+    video_dir_name = os.path.basename(path)
+    favorite_dir_name = os.path.basename(os.path.dirname(path))
 
-    assert path.startswith("/archive/收藏_夹/")
-    assert path.endswith(" [BV123]")
-    assert len(path.split("/")[-1]) <= 80
-    assert ":" not in path.split("/")[-1]
+    assert favorite_dir_name == "收藏_夹"
+    assert video_dir_name.endswith(" [BV123]")
+    assert len(video_dir_name) <= 80
+    assert ":" not in video_dir_name
 
 
 def test_database_manager_stores_and_updates_asset(tmp_path):

@@ -1,35 +1,38 @@
 FROM python:3.11-slim
 
-# 设置环境变量
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONUNBUFFERED=1
+ARG DEBIAN_MIRROR=https://deb.debian.org
 
-# 工作目录
+LABEL org.opencontainers.image.title="BiliArchive-Pro" \
+      org.opencontainers.image.version="1.1.3" \
+      org.opencontainers.image.source="https://github.com/Stars4422335/BiliArchive-Pro" \
+      org.opencontainers.image.licenses="GPL-3.0-only"
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    BILIARCHIVE_VERSION=1.1.3
+
 WORKDIR /app
 
-# 安装系统级依赖
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
+RUN case "$DEBIAN_MIRROR" in https://*) ;; *) echo "DEBIAN_MIRROR must use HTTPS" >&2; exit 1 ;; esac && \
+    sed -i "s|http://deb.debian.org|${DEBIAN_MIRROR%/}|g" /etc/apt/sources.list.d/debian.sources && \
+    apt-get -o Acquire::Retries=5 update && \
+    apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
     ffmpeg \
-    wget \
-    curl \
     tzdata \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# 设置时区（可选）
 ENV TZ=Asia/Shanghai
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-# 安装依赖
-COPY requirements.txt .
+COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 复制项目代码
-COPY . .
+# Copy only runtime files. Local credentials and planning files can never enter the image.
+COPY app ./app
+COPY main.py login.py config.yaml LICENSE README.md ./
+RUN mkdir -p /app/data /app/downloads /app/bin
 
-# 持久化存储
 VOLUME ["/app/data", "/app/downloads", "/app/bin"]
 
-# 默认运行命令
 CMD ["python", "main.py", "--cli"]
