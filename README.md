@@ -143,6 +143,8 @@ python -m compileall main.py login.py app
 
 ## 🧾 最新改进（v1.1.3）
 
+完整版本说明见 [CHANGELOG.md](CHANGELOG.md)。
+
 - 项目许可证声明统一为 GPLv3。
 - 新增 `config.local.yaml` 本地覆盖机制，个人测试配置不再污染受跟踪模板。
 - Docker 改为运行文件白名单复制，并通过 `.dockerignore` 排除凭据、数据库、下载内容、本地环境和任务记录。

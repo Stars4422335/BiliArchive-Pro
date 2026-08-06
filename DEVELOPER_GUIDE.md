@@ -52,13 +52,14 @@ docker build --build-arg DEBIAN_MIRROR=https://mirrors.aliyun.com -t biliarchive
 
 ## 发布流程
 
-1. 确认测试、编译检查和 Docker 构建全部通过。
-2. 使用 `git status --short` 确认没有凭据、数据库、本地配置或任务记录进入变更。
-3. 提交并标记版本后，只用 Git 受跟踪内容生成 ZIP：
+1. 将 `app/__init__.py`、Dockerfile 镜像标签、README 徽章与最新改进、`CHANGELOG.md` 更新为同一版本号。
+2. 确认测试、编译检查和 Docker 构建全部通过。
+3. 使用 `git status --short` 确认没有凭据、数据库、本地配置或任务记录进入变更。
+4. 提交并标记版本后，只用 Git 受跟踪内容生成 ZIP：
 
 ```bash
 git archive --format=zip --prefix=BiliArchive-Pro-vX.Y.Z/ --output BiliArchive-Pro-vX.Y.Z.zip vX.Y.Z
 ```
 
-4. 审计 ZIP 文件列表，确认不包含 `config.local.yaml`、`data/`、`downloads/`、`bin/`、`venv/` 或本地任务记录。
-5. 计算 SHA256，并将 ZIP 与校验值附加到对应 GitHub Release。
+5. 审计 ZIP 文件列表，确认不包含 `config.local.yaml`、`data/`、`downloads/`、`bin/`、`venv/` 或本地任务记录。
+6. 计算 SHA256，使用 `CHANGELOG.md` 中对应版本内容作为 Release 说明，并上传 ZIP 与校验文件。

@@ -42,5 +42,15 @@ def test_dockerfile_uses_explicit_runtime_copy_list():
     assert LOCAL_PLAN not in dockerfile
 
 
-def test_release_version_is_1_1_3():
-    assert __version__ == "1.1.3"
+def test_release_metadata_is_1_1_3():
+    expected_version = "1.1.3"
+    dockerfile = (PROJECT_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+    changelog = (PROJECT_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+
+    assert __version__ == expected_version
+    assert f'org.opencontainers.image.version="{expected_version}"' in dockerfile
+    assert f"BILIARCHIVE_VERSION={expected_version}" in dockerfile
+    assert f"Release: v{expected_version}" in readme
+    assert f"最新改进（v{expected_version}）" in readme
+    assert f"## [{expected_version}] - 2026-08-06" in changelog
