@@ -3,6 +3,7 @@ import asyncio
 import pytest
 
 import main
+from app.core.parser import SyncFetchError
 
 
 class DummyScanner:
@@ -64,6 +65,23 @@ def test_daemon_loop_runs_component_update_when_enabled(monkeypatch):
     assert DummyUpdater.called is True
 
 
+def test_daemon_loop_applies_sdk_request_timeout(monkeypatch):
+    timeouts = []
+    monkeypatch.setattr(main.request_settings, "set_timeout", timeouts.append)
+    monkeypatch.setattr(main, "DatabaseManager", lambda db_path: object())
+    monkeypatch.setattr(main, "PathManager", lambda root_path, plex_mode: object())
+    monkeypatch.setattr(main, "FavScanner", DummyScanner)
+    monkeypatch.setattr(main, "ComponentUpdater", DummyUpdater)
+    monkeypatch.setattr(main.asyncio, "sleep", stop_after_first_sleep)
+    config = base_config()
+    config["network"] = {"request_timeout_seconds": 12}
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(main.daemon_loop(config, cred=object(), uid=1))
+
+    assert timeouts == [12.0]
+
+
 def test_daemon_loop_uses_configured_scan_interval(monkeypatch):
     slept = []
 
@@ -81,6 +99,36 @@ def test_daemon_loop_uses_configured_scan_interval(monkeypatch):
         asyncio.run(main.daemon_loop(base_config(), cred=object(), uid=1))
 
     assert slept == [7]
+
+
+def test_daemon_loop_continues_after_one_source_fetch_failure(monkeypatch, capsys):
+    calls = []
+
+    class PartiallyFailingScanner(DummyScanner):
+        async def scan_favorite(self, fav_id, fav_name):
+            calls.append((fav_id, fav_name))
+            if fav_id == 1:
+                raise SyncFetchError("temporary API failure")
+
+    config = base_config()
+    config["system"]["check_update_on_start"] = False
+    config["favorites"] = [
+        {"id": 1, "name": "First"},
+        {"id": 2, "name": "Second"},
+    ]
+    monkeypatch.setattr(main, "DatabaseManager", lambda db_path: object())
+    monkeypatch.setattr(main, "PathManager", lambda root_path, plex_mode: object())
+    monkeypatch.setattr(main, "FavScanner", PartiallyFailingScanner)
+    monkeypatch.setattr(main.asyncio, "sleep", stop_after_first_sleep)
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(main.daemon_loop(config, cred=object(), uid=1))
+
+    output = capsys.readouterr().out
+    assert calls == [(1, "First"), (2, "Second")]
+    assert "本轮扫描不完整" in output
+    assert "收藏夹 First (1)" in output
+    assert "本轮全量扫描完毕" not in output
 
 
 def test_load_config_merges_local_overrides(monkeypatch, tmp_path):

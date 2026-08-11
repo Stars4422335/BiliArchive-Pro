@@ -6,7 +6,20 @@ from app.core.metadata import MetadataGenerator
 class FavScanner:
     def __init__(self, config, credential, db, path_mgr, uid=None):
         self.config = config
-        self.parser = BiliParser(credential, uid=uid)
+        network_config = config.get("network", {})
+        self.parser = BiliParser(
+            credential,
+            uid=uid,
+            retry_attempts=network_config.get("sync_retry_attempts", 3),
+            retry_backoff_seconds=network_config.get(
+                "sync_retry_backoff_seconds",
+                2,
+            ),
+            request_timeout_seconds=network_config.get(
+                "request_timeout_seconds",
+                30,
+            ),
+        )
         self.downloader = Downloader(config)
         self.db = db
         self.path_mgr = path_mgr
@@ -14,6 +27,12 @@ class FavScanner:
         self.global_download_count = 0  # 全局下载计数器
         # 从配置读取最大下载数量，0或None表示无限制（下载全部）
         self.max_global_downloads = config.get('system', {}).get('max_downloads_per_run', 0)
+
+    @staticmethod
+    async def _wait_for_next_page():
+        await asyncio.sleep(1.5)
+        print("[*] 准备拉取下一页...")
+        await asyncio.sleep(2)
 
     async def scan_favorite(self, fav_id, fav_name):
         # 检查全局下载限制（0或None表示无限制）
@@ -30,6 +49,10 @@ class FavScanner:
             # 获取当前页内容
             items, has_more = await self.parser.get_favorite_list(fav_id, page)
             if not items:
+                if has_more:
+                    page += 1
+                    await self._wait_for_next_page()
+                    continue
                 break
 
             for item in items:
@@ -122,9 +145,7 @@ class FavScanner:
             # 本页处理结束，如果未触发退出条件且 has_more=True，则页码+1继续
             page += 1
             if has_more:
-                await asyncio.sleep(1.5) # 加入防风控安全延时
-                print(f"[*] 准备拉取下一页...")
-                await asyncio.sleep(2)  # 翻页防风控保护
+                await self._wait_for_next_page()
 
     async def scan_watch_later(self):
         """扫描稍后再看列表"""
@@ -200,6 +221,10 @@ class FavScanner:
         while has_more:
             items, has_more = await self.parser.get_collection_list(collection_id, page)
             if not items:
+                if has_more:
+                    page += 1
+                    await self._wait_for_next_page()
+                    continue
                 break
 
             for item in items:
@@ -248,7 +273,5 @@ class FavScanner:
             
             page += 1
             if has_more:
-                await asyncio.sleep(1.5)
-                print(f"[*] 准备拉取下一页...")
-                await asyncio.sleep(2)
+                await self._wait_for_next_page()
 

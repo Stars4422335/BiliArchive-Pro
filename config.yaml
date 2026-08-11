@@ -21,6 +21,9 @@ sync_collections:
   #   name: "某个UP主的精华合集"
 
 network:
+  sync_retry_attempts: 3       # 同步列表读取最大尝试次数（含首次）
+  sync_retry_backoff_seconds: 2 # 重试的初始等待时间（指数退避）
+  request_timeout_seconds: 30  # 直接 HTTP 同步请求超时时间
   # GitHub 组件下载代理前缀。官方 SHA256 校验文件始终直连获取；留空表示全部直连。
   # 示例: "https://mirror.ghproxy.com/"
   github_proxy_url: "" 

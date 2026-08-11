@@ -5,7 +5,7 @@ import json
 import yaml
 import asyncio
 import argparse
-from bilibili_api import register_client, Credential, user
+from bilibili_api import register_client, request_settings, Credential, user
 from bilibili_api.clients.HTTPXClient import HTTPXClient
 from app import __version__
 
@@ -13,6 +13,7 @@ from app import __version__
 register_client("httpx", HTTPXClient, {})
 
 from app.core.database_manager import DatabaseManager
+from app.core.parser import SyncFetchError
 from app.core.path_manager import PathManager
 from app.scheduler.scanner import FavScanner
 from app.scheduler.updater import ComponentUpdater
@@ -83,9 +84,28 @@ async def check_cookie(cookie_path):
         print("[!] 建议重新运行 python login.py 扫码登录。")
         return cred, uid # 即使失败也返回，部分公开视频仍可强行下载
 
+
+async def _run_source_scan(label, operation):
+    """隔离单个同步来源的读取失败，避免阻断后续来源。"""
+    try:
+        await operation()
+        return True
+    except SyncFetchError as exc:
+        print(f"[-] 同步来源读取失败，已中止当前来源: {label}: {exc}")
+        return False
+
 async def daemon_loop(config, cred, uid):
     """主循环守护进程"""
     print(f"\n=== 🚀 BiliArchive-Pro v{__version__} 核心引擎启动 ===")
+
+    request_timeout = min(
+        300.0,
+        max(
+            1.0,
+            float(config.get("network", {}).get("request_timeout_seconds", 30)),
+        ),
+    )
+    request_settings.set_timeout(request_timeout)
     
     if config.get('system', {}).get('check_update_on_start', False):
         await ComponentUpdater(config).check_all()
@@ -101,7 +121,12 @@ async def daemon_loop(config, cred, uid):
     # 如果配置文件中没有收藏夹，尝试自动获取
     if not target_favs:
         print("[*] 配置文件中未指定收藏夹，正在自动获取您的收藏夹列表...")
-        target_favs = await scanner.parser.get_user_favorite_lists()
+        try:
+            target_favs = await scanner.parser.get_user_favorite_lists()
+        except SyncFetchError as exc:
+            print(f"[-] 自动获取收藏夹列表失败: {exc}")
+            print("[!] 本次未将读取失败当作空收藏夹，请稍后重试。")
+            return
         
         if not target_favs:
             print("[-] 错误：无法获取收藏夹列表！")
@@ -127,8 +152,15 @@ async def daemon_loop(config, cred, uid):
         print(f"[*] 使用配置文件中指定的 {len(target_favs)} 个收藏夹")
 
     while True:
+        incomplete_sources = []
         for fav in target_favs:
-            await scanner.scan_favorite(fav['id'], fav['name'])
+            label = f"收藏夹 {fav['name']} ({fav['id']})"
+            completed = await _run_source_scan(
+                label,
+                lambda fav=fav: scanner.scan_favorite(fav['id'], fav['name']),
+            )
+            if not completed:
+                incomplete_sources.append(label)
             # 若达到全局限制，提前跳出收藏夹遍历
             if scanner.max_global_downloads and scanner.global_download_count >= scanner.max_global_downloads:
                 break
@@ -136,14 +168,27 @@ async def daemon_loop(config, cred, uid):
         # 接续处理稍后再看
         if config.get('system', {}).get('sync_watch_later', False):
             if not scanner.max_global_downloads or scanner.global_download_count < scanner.max_global_downloads:
-                await scanner.scan_watch_later()
+                label = "稍后再看"
+                completed = await _run_source_scan(label, scanner.scan_watch_later)
+                if not completed:
+                    incomplete_sources.append(label)
 
         # 接续处理稍后再看
         sync_collections = config.get('sync_collections', [])
         if sync_collections:
             for coll in sync_collections:
                 if not scanner.max_global_downloads or scanner.global_download_count < scanner.max_global_downloads:
-                    await scanner.scan_collection(coll['id'], coll.get('name', f"合集_{coll['id']}"))
+                    collection_name = coll.get('name', f"合集_{coll['id']}")
+                    label = f"合集 {collection_name} ({coll['id']})"
+                    completed = await _run_source_scan(
+                        label,
+                        lambda coll=coll, collection_name=collection_name: scanner.scan_collection(
+                            coll['id'],
+                            collection_name,
+                        ),
+                    )
+                    if not completed:
+                        incomplete_sources.append(label)
 
         # 如果达到了 limit，则直接退出整个程序
         if scanner.max_global_downloads and scanner.global_download_count >= scanner.max_global_downloads:
@@ -151,7 +196,17 @@ async def daemon_loop(config, cred, uid):
             break
 
         scan_interval = config.get('system', {}).get('scan_interval_seconds', 21600)
-        print(f"\n[*] 本轮全量扫描完毕，进入休眠阶段 ({scan_interval} 秒后再次扫描)...")
+        if incomplete_sources:
+            failed_labels = "、".join(incomplete_sources)
+            print(
+                f"\n[!] 本轮扫描不完整，失败来源: {failed_labels}。"
+                f"{scan_interval} 秒后重试。"
+            )
+        else:
+            print(
+                f"\n[*] 本轮全量扫描完毕，进入休眠阶段 "
+                f"({scan_interval} 秒后再次扫描)..."
+            )
         await asyncio.sleep(scan_interval)
 
 if __name__ == "__main__":

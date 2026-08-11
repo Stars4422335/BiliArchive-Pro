@@ -88,6 +88,9 @@ system:
   max_downloads_per_run: 0           # 0代表无限制。若只想测试，可改为 5
 
 network:
+  sync_retry_attempts: 3            # 同步列表读取最大尝试次数
+  sync_retry_backoff_seconds: 2     # 失败后指数退避的初始秒数
+  request_timeout_seconds: 30       # 直接 HTTP 同步请求超时
   github_proxy_url: "https://mirror.ghproxy.com/" # 解决国内服务器下载 yt-dlp 失败的问题
 
 components:
@@ -102,6 +105,8 @@ favorites:
 ```
 
 个人测试配置请写入根目录的 `config.local.yaml`。程序会在读取 `config.yaml` 后递归合并本地配置，其中列表和普通值以本地文件为准。该文件默认被 Git 和 Docker 构建忽略，适合保存本机收藏夹、开关和路径设置。
+
+同步列表请求失败时会按 `sync_retry_attempts` 进行有限重试。重试耗尽后，当前收藏夹、稍后再看或合集会被标记为本轮失败，其他来源仍会继续扫描，下一轮再重试失败来源。
 
 > `config.local.yaml` 只用于本地覆盖，不应放入发布包。Docker 部署应通过挂载 `config.yaml` 或其他部署侧配置管理方式提供运行配置。
 
