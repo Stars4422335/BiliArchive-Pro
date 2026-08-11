@@ -56,7 +56,7 @@ def test_download_video_runs_ytdlp_when_free_disk_meets_threshold(monkeypatch, t
         "resolve_executable",
         lambda configured_path, executable_name, required=True: executable_name,
     )
-    monkeypatch.setattr("app.core.downloader.glob.glob", lambda pattern: [])
+    monkeypatch.setattr(downloader, "_convert_downloaded_danmaku", lambda *_: None)
     monkeypatch.setattr(
         "app.core.downloader.shutil.disk_usage",
         lambda path: SimpleNamespace(free=6 * 1024**3),
@@ -82,7 +82,7 @@ def test_download_video_falls_back_to_path_ytdlp_when_configured_file_is_missing
 
     monkeypatch.setattr(downloader, "convert_cookie_to_netscape", lambda cookie_path: cookie_path)
     monkeypatch.setattr(downloader, "random_sleep", lambda action_type="download": None)
-    monkeypatch.setattr("app.core.downloader.glob.glob", lambda pattern: [])
+    monkeypatch.setattr(downloader, "_convert_downloaded_danmaku", lambda *_: None)
     monkeypatch.setattr(
         "app.core.downloader.os.path.exists",
         lambda path: path not in {"./bin/yt-dlp", "./bin/yt-dlp.exe"},
@@ -122,7 +122,7 @@ def test_download_video_uses_path_ffmpeg_when_configured_file_is_missing(monkeyp
 
     monkeypatch.setattr(downloader, "convert_cookie_to_netscape", lambda cookie_path: cookie_path)
     monkeypatch.setattr(downloader, "random_sleep", lambda action_type="download": None)
-    monkeypatch.setattr("app.core.downloader.glob.glob", lambda pattern: [])
+    monkeypatch.setattr(downloader, "_convert_downloaded_danmaku", lambda *_: None)
     monkeypatch.setattr(
         "app.core.downloader.os.path.exists",
         lambda path: path not in {"./bin/ffmpeg", "./bin/ffmpeg.exe"},
@@ -151,7 +151,7 @@ def test_download_video_does_not_auto_install_ytdlp_when_missing_from_path(monke
 
     monkeypatch.setattr(downloader, "convert_cookie_to_netscape", lambda cookie_path: cookie_path)
     monkeypatch.setattr(downloader, "random_sleep", lambda action_type="download": None)
-    monkeypatch.setattr("app.core.downloader.glob.glob", lambda pattern: [])
+    monkeypatch.setattr(downloader, "_convert_downloaded_danmaku", lambda *_: None)
     missing_ytdlp_paths = {
         config["components"]["yt-dlp"]["path"],
         config["components"]["yt-dlp"]["path"] + ".exe",
@@ -256,7 +256,7 @@ def test_download_video_removes_generated_netscape_cookie(monkeypatch, tmp_path)
         "resolve_executable",
         lambda configured_path, executable_name, required=True: executable_name,
     )
-    monkeypatch.setattr("app.core.downloader.glob.glob", lambda pattern: [])
+    monkeypatch.setattr(downloader, "_convert_downloaded_danmaku", lambda *_: None)
     monkeypatch.setattr("app.core.downloader._run_process_tree", lambda *args, **kwargs: calls.append((args, kwargs)))
 
     result = downloader.download_video(
@@ -490,3 +490,118 @@ def test_download_video_rejects_https_url_without_host(monkeypatch, tmp_path):
     assert result is False
     assert calls == []
     assert not (tmp_path / "archive").exists()
+
+
+def test_download_video_forces_single_item_and_requests_manual_and_auto_subtitles(
+    monkeypatch,
+    tmp_path,
+):
+    downloader = Downloader(make_config(min_disk_gb=0))
+    calls = []
+
+    monkeypatch.setattr(downloader, "convert_cookie_to_netscape", lambda path: path)
+    monkeypatch.setattr(downloader, "random_sleep", lambda action_type="download": None)
+    monkeypatch.setattr(
+        downloader,
+        "resolve_executable",
+        lambda configured_path, executable_name, required=True: executable_name,
+    )
+    monkeypatch.setattr(
+        downloader,
+        "_convert_downloaded_danmaku",
+        lambda save_dir, file_name: None,
+    )
+    monkeypatch.setattr(
+        "app.core.downloader._run_process_tree",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+
+    result = downloader.download_video(
+        url="https://www.bilibili.com/video/BV1?p=2",
+        save_dir=str(tmp_path),
+        file_name="S01E02 - 第二集 [BV1-P2]",
+        cookie_file_path="cookie.txt",
+    )
+
+    assert result is True
+    cmd = calls[0][0][0]
+    assert "--no-playlist" in cmd
+    assert "--write-subs" in cmd
+    assert "--write-auto-subs" in cmd
+    assert cmd[cmd.index("-o") + 1].endswith(
+        "S01E02 - 第二集 [BV1-P2].%(ext)s"
+    )
+
+
+def test_danmaku_conversion_only_processes_current_download_prefix(monkeypatch, tmp_path):
+    media_dir = tmp_path / "Video [BV1]"
+    media_dir.mkdir()
+    current = media_dir / "video [BV1].danmaku.xml"
+    ordinary_subtitle = media_dir / "video [BV1].zh-Hans.xml"
+    similar_prefix = media_dir / "video [BV1]-old.danmaku.xml"
+    unrelated = media_dir / "other.danmaku.xml"
+    for path in (current, ordinary_subtitle, similar_prefix, unrelated):
+        path.write_text("<i />", encoding="utf-8")
+    calls = []
+
+    monkeypatch.setattr(
+        "app.core.downloader.DanmakuConverter.xml_to_ass",
+        lambda source, target: calls.append((source, target)) or True,
+    )
+
+    Downloader._convert_downloaded_danmaku(str(media_dir), "video [BV1]")
+
+    assert calls == [
+        (str(current), str(media_dir / "video [BV1].danmaku.ass"))
+    ]
+
+
+def test_danmaku_conversion_exception_does_not_escape(monkeypatch, tmp_path, capsys):
+    current = tmp_path / "video [BV1].danmaku.xml"
+    current.write_text("<i />", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "app.core.downloader.DanmakuConverter.xml_to_ass",
+        lambda source, target: (_ for _ in ()).throw(OverflowError("bad time")),
+    )
+
+    Downloader._convert_downloaded_danmaku(str(tmp_path), "video [BV1]")
+
+    assert current.exists()
+    assert "已保留原 XML" in capsys.readouterr().out
+
+
+def test_download_video_escapes_percent_only_in_ytdlp_output_template(
+    monkeypatch,
+    tmp_path,
+):
+    downloader = Downloader(make_config(min_disk_gb=0))
+    calls = []
+
+    monkeypatch.setattr(downloader, "convert_cookie_to_netscape", lambda path: path)
+    monkeypatch.setattr(downloader, "random_sleep", lambda action_type="download": None)
+    monkeypatch.setattr(
+        downloader,
+        "resolve_executable",
+        lambda configured_path, executable_name, required=True: executable_name,
+    )
+    monkeypatch.setattr(
+        downloader,
+        "_convert_downloaded_danmaku",
+        lambda save_dir, file_name: None,
+    )
+    monkeypatch.setattr(
+        "app.core.downloader._run_process_tree",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+
+    result = downloader.download_video(
+        url="https://www.bilibili.com/video/BV1",
+        save_dir=str(tmp_path),
+        file_name="100%完成 [BV1]",
+        cookie_file_path="cookie.txt",
+    )
+
+    assert result is True
+    cmd = calls[0][0][0]
+    assert cmd[cmd.index("-o") + 1].endswith("100%%完成 [BV1].%(ext)s")

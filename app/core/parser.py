@@ -114,17 +114,24 @@ class BiliParser:
 
     async def check_multi_p(self, bvid):
         """检查视频是否为多 P (分集视频)，并获取所有分P信息"""
-        try:
+        label = f"拉取视频 {bvid} 分P信息"
+
+        async def fetch():
             v = video.Video(bvid=bvid, credential=self.credential)
             info = await v.get_info()
-            pages = info.get("pages", [])
+            if not isinstance(info, dict):
+                raise ValueError("视频详情不是映射结构")
+            if "pages" not in info or info["pages"] is None:
+                raise ValueError("视频详情缺少 pages")
+            pages = info["pages"]
+            if not isinstance(pages, list) or not pages or any(
+                not isinstance(page, dict) for page in pages
+            ):
+                raise ValueError("视频分P信息必须是非空列表结构")
 
-            if len(pages) > 1:
-                return True, pages
-            return False, pages
-        except Exception as exc:
-            print(f"[-] 获取视频 {bvid} 详细信息失败，可能已失效: {exc}")
-            return False, []
+            return len(pages) > 1, pages
+
+        return await self._fetch_with_retry(label, fetch)
 
     async def get_user_favorite_lists(self):
         """获取用户的所有视频收藏夹列表"""

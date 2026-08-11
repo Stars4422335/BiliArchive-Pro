@@ -1,42 +1,44 @@
 import os
 import re
+import shutil
 import requests
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
 from datetime import datetime
 from bs4 import BeautifulSoup
 
+
 class MetadataGenerator:
     @staticmethod
-    def create_nfo(video_info, save_path, status="Active"):
-        """
-        生成符合 Kodi/Plex 标准的 .nfo 元数据文件
-        status: Active(正常), Tombstoned(墓碑), Protected(源端删本地存)
-        """
-        os.makedirs(save_path, exist_ok=True)
-        root = ET.Element("movie")
+    def _safe_stem(value):
+        clean_value = re.sub(r'[\\/:*?"<>|]', '_', str(value or "info"))
+        return clean_value.replace("\n", " ").replace("\r", " ").strip()[:100] or "info"
 
-        # 核心基础信息
-        ET.SubElement(root, "title").text = video_info.get("title", "未知标题")
-        ET.SubElement(root, "uniqueid", type="bilibili").text = video_info.get("bvid", "")
-        ET.SubElement(root, "studio").text = video_info.get("up_name", "未知UP主")
-        
-        # 模拟“演员”节点，方便在 Plex 里按 UP 主聚合
+    @staticmethod
+    def _add_common_fields(root, video_info, status="Active"):
+        title = str(video_info.get("title") or "未知标题")
+        unique_id = str(video_info.get("bvid") or "")
+        up_name = str(video_info.get("up_name") or "未知UP主")
+
+        ET.SubElement(root, "title").text = title
+        if unique_id:
+            ET.SubElement(root, "uniqueid", type="bilibili").text = unique_id
+        ET.SubElement(root, "studio").text = up_name
+
         actor = ET.SubElement(root, "actor")
-        ET.SubElement(actor, "name").text = video_info.get("up_name", "未知UP主")
+        ET.SubElement(actor, "name").text = up_name
         ET.SubElement(actor, "role").text = "UP主"
 
-        # 时间戳处理 (转为 Plex 认的 YYYY-MM-DD)
-        if "pubtime" in video_info and video_info["pubtime"]:
+        pubtime = video_info.get("pubtime")
+        if pubtime:
             try:
-                pub_date = datetime.fromtimestamp(video_info["pubtime"]).strftime('%Y-%m-%d')
+                pub_date = datetime.fromtimestamp(float(pubtime)).strftime('%Y-%m-%d')
                 ET.SubElement(root, "premiered").text = pub_date
                 ET.SubElement(root, "year").text = pub_date[:4]
-            except Exception:
+            except (OSError, OverflowError, TypeError, ValueError):
                 pass
 
-        # 简介与状态标记逻辑
-        plot_text = video_info.get("intro", "无简介")
+        plot_text = str(video_info.get("intro") or "无简介")
         if status == "Tombstoned":
             plot_text = f"【系统警告：此视频已在 B 站失效。仅保留元数据。】\n\n{plot_text}"
             ET.SubElement(root, "genre").text = "已失效备份"
@@ -47,20 +49,96 @@ class MetadataGenerator:
 
         ET.SubElement(root, "plot").text = plot_text
 
-        # 格式化 XML
-        xml_bytes = ET.tostring(root, encoding='utf-8')
-        xml_str = minidom.parseString(xml_bytes).toprettyxml(indent="  ")
-        
-        # 文件命名去畸
-        clean_title = re.sub(r'[\\/:*?"<>|]', '_', video_info.get('title', 'info'))[:50]
-        nfo_path = os.path.join(save_path, f"{clean_title}.nfo")
-
+    @staticmethod
+    def _write_nfo(root, nfo_path):
         try:
+            os.makedirs(os.path.dirname(nfo_path), exist_ok=True)
+            xml_bytes = ET.tostring(root, encoding='utf-8')
+            xml_str = minidom.parseString(xml_bytes).toprettyxml(indent="  ")
             with open(nfo_path, "w", encoding="utf-8") as f:
                 f.write(xml_str)
             print(f"[+] NFO 元数据已生成: {nfo_path}")
-        except Exception as e:
-            print(f"[-] NFO 写入失败: {e}")
+            return nfo_path
+        except Exception as exc:
+            print(f"[-] NFO 写入失败: {exc}")
+            return None
+
+    @staticmethod
+    def create_nfo(video_info, save_path, status="Active", file_stem=None):
+        """
+        生成与单个媒体文件同名的 movie NFO。
+        status: Active(正常), Tombstoned(墓碑), Protected(源端删本地存)
+        """
+        root = ET.Element("movie")
+        MetadataGenerator._add_common_fields(root, video_info, status)
+        stem = MetadataGenerator._safe_stem(
+            file_stem if file_stem is not None else video_info.get("title", "info")
+        )
+        return MetadataGenerator._write_nfo(
+            root,
+            os.path.join(save_path, f"{stem}.nfo"),
+        )
+
+    @staticmethod
+    def create_tvshow_nfo(video_info, save_path):
+        """为 Plex/Jellyfin 多P目录生成剧集级元数据。"""
+        root = ET.Element("tvshow")
+        MetadataGenerator._add_common_fields(root, video_info)
+        return MetadataGenerator._write_nfo(root, os.path.join(save_path, "tvshow.nfo"))
+
+    @staticmethod
+    def create_episode_nfo(
+        video_info,
+        save_path,
+        file_stem,
+        episode_number,
+        episode_title,
+    ):
+        """为单个分P生成与媒体同名的 episode NFO。"""
+        episode_info = dict(video_info)
+        episode_info["title"] = episode_title
+        bvid = str(video_info.get("bvid") or "")
+        if bvid:
+            episode_info["bvid"] = f"{bvid}-P{episode_number}"
+
+        root = ET.Element("episodedetails")
+        MetadataGenerator._add_common_fields(root, episode_info)
+        ET.SubElement(root, "showtitle").text = str(
+            video_info.get("title") or "未知标题"
+        )
+        ET.SubElement(root, "season").text = "1"
+        ET.SubElement(root, "episode").text = str(episode_number)
+        return MetadataGenerator._write_nfo(
+            root,
+            os.path.join(save_path, f"{MetadataGenerator._safe_stem(file_stem)}.nfo"),
+        )
+
+    @staticmethod
+    def copy_artwork(source_dir, file_stem, target_path, overwrite=True):
+        """把 yt-dlp 生成的同名 JPG 复制为媒体库约定的封面名称。"""
+        source_path = None
+        for extension in (".jpg", ".jpeg"):
+            candidate = os.path.join(source_dir, f"{file_stem}{extension}")
+            try:
+                if os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
+                    source_path = candidate
+                    break
+            except OSError:
+                continue
+
+        if not source_path:
+            return None
+        if os.path.exists(target_path) and not overwrite:
+            return target_path
+
+        try:
+            os.makedirs(os.path.dirname(target_path), exist_ok=True)
+            if os.path.abspath(source_path) != os.path.abspath(target_path):
+                shutil.copyfile(source_path, target_path)
+            return target_path
+        except OSError as exc:
+            print(f"[-] 封面整理失败: {exc}")
+            return None
 
     @staticmethod
     def process_article_to_md(article_info, save_path):

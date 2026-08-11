@@ -226,3 +226,68 @@ def test_collection_rejects_missing_or_invalid_mid(mid):
 
     with pytest.raises(ValueError, match="mid 必须是正整数"):
         asyncio.run(parser.get_collection_list(123, mid=mid))
+
+
+def test_multi_part_info_retries_before_returning_pages(monkeypatch):
+    responses = [
+        TimeoutError("temporary timeout"),
+        {
+            "pages": [
+                {"page": 1, "part": "第一集"},
+                {"page": 2, "part": "第二集"},
+            ]
+        },
+    ]
+
+    class FakeVideo:
+        async def get_info(self):
+            response = responses.pop(0)
+            if isinstance(response, Exception):
+                raise response
+            return response
+
+    monkeypatch.setattr(
+        parser_module.video,
+        "Video",
+        lambda bvid, credential: FakeVideo(),
+    )
+    parser = BiliParser(
+        credential=object(),
+        retry_attempts=2,
+        retry_backoff_seconds=0,
+    )
+
+    is_multi, pages = asyncio.run(parser.check_multi_p("BV123"))
+
+    assert is_multi is True
+    assert [page["part"] for page in pages] == ["第一集", "第二集"]
+    assert responses == []
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"pages": None},
+        {"pages": []},
+        {"pages": "not-a-list"},
+    ],
+)
+def test_multi_part_info_rejects_invalid_page_structure(monkeypatch, payload):
+    class FakeVideo:
+        async def get_info(self):
+            return payload
+
+    monkeypatch.setattr(
+        parser_module.video,
+        "Video",
+        lambda bvid, credential: FakeVideo(),
+    )
+    parser = BiliParser(
+        credential=object(),
+        retry_attempts=2,
+        retry_backoff_seconds=0,
+    )
+
+    with pytest.raises(SyncFetchError, match="pages|分P信息"):
+        asyncio.run(parser.check_multi_p("BV123"))

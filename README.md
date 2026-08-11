@@ -3,7 +3,7 @@
 > **专业的 Bilibili 个人数字资产全量备份系统**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Release: v1.2.0](https://img.shields.io/badge/release-v1.2.0-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.2.0)
+[![Release: v1.3.0](https://img.shields.io/badge/release-v1.3.0-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.3.0)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 
 **BiliArchive-Pro** 旨在为 B 站深度用户提供一套稳定、安全且符合影视库管理规范（如 Plex、Jellyfin、Emby）的本地自动化备份方案。它不仅是一个支持最高 4K/HDR 画质的下载器，更是一个智能的**个人数字图书馆管理员**。
@@ -15,12 +15,12 @@
 ## ✨ 核心特性
 
 - 🚀 **全能媒体抓取**：不仅仅是视频！支持最高画质视频下载（含多 P 分集），同时**独家支持专栏图文**抓取（自动转为 Markdown 并将图片本地化保存）。
-- 🎬 **完美适配影视库 (Plex/Jellyfin)**：自动刮削并生成符合标准规范的 `.nfo` 元数据、下载高清封面图，并将 UP 主映射为演职员信息。
+- 🎬 **媒体库侧车输出 (Plex/Jellyfin/Emby)**：媒体与 `.nfo` 一一同名，整理标准封面；多 P 可按 `Season 01/S01E##` 组织，并将 UP 主写入演职员信息。
 - 🛡️ **首创数字资产保护逻辑**：
   - **墓碑机制 (Tombstone)**：扫描到收藏夹中已被 B 站删除的失效视频时，在本地生成 NFO 占位符，记录遗失的元数据。
   - **孤本保护**：如果本地已下载好的视频后来被源端删除，本地资产会自动打标锁定（如添加 `[源端已删]` 前缀），绝不发生误覆盖或同步删除。
 - ⚡ **周期巡检与防风控**：按配置周期全量巡检收藏夹，通过本地数据库跳过已归档资源并更新存活时间；翻页和下载后加入休眠，降低请求频率。
-- 💬 **弹幕智能渲染**：自动下载 B 站原生 XML 弹幕，并利用内置渲染引擎实时转换为各大播放器通用的 `.ass` 高级字幕格式。
+- 💬 **弹幕智能渲染**：把当前媒体的 B 站 XML 弹幕转换为 `.ass`，分别调度滚动、顶部和底部轨道，过载时丢弃冲突项以避免文字重叠。
 - 🔄 **可选组件检查**：可按 `auto` / `notify` / `off` 策略检查 `yt-dlp`；自动更新前必须通过 GitHub 官方 SHA256 校验，同时验证系统或配置路径中的 FFmpeg 是否可用。
 
 ---
@@ -83,7 +83,7 @@ docker-compose up -d
 ```yaml
 system:
   download_path: "./downloads"       # 媒体库保存位置
-  plex_mode: true                    # 开启后，多P视频会独立建文件夹，适配 Plex/Jellyfin
+  plex_mode: true                    # 多P使用 Season 01/S01E；false 时平铺为 P01/P02
   check_update_on_start: false       # 是否在启动时执行组件检查策略
   max_downloads_per_run: 0           # 0代表无限制。若只想测试，可改为 5
   download_timeout_seconds: 7200     # 单个 yt-dlp 任务超时；0 表示不限制
@@ -116,6 +116,16 @@ favorites:
 同步列表请求失败时会按 `sync_retry_attempts` 进行有限重试。重试耗尽后，当前收藏夹、稍后再看或合集会被标记为本轮失败，其他来源仍会继续扫描，下一轮再重试失败来源。
 
 单个下载超过 `download_timeout_seconds` 后会终止 yt-dlp/FFmpeg 进程树、返回失败并清理临时 Cookie。非空 `.part` 文件会保留并在下一轮通过 `yt-dlp --continue` 续传，空残留会自动清理。
+
+媒体库输出规则：
+
+- 单 P 视频在两种模式下都保持原目录结构，媒体、字幕、弹幕 ASS 和 NFO 使用同一文件名前缀，并在视频目录生成 `poster.jpg`。
+- `plex_mode: true` 时，多 P 视频写入 `Season 01/`，按 `S01E01`、`S01E02` 命名；根目录生成 `tvshow.nfo` 和 `poster.jpg`，每集生成同名 NFO 与 `-thumb.jpg`。
+- `plex_mode: false` 时，多 P 视频平铺在视频目录，按 `P01`、`P02` 命名，每个分 P 仍有独立 NFO 和封面，避免覆盖。
+- 每个分 P 使用独立 URL 下载。只有全部分 P 与关键 NFO 都成功后才写入数据库完成状态；中途失败会在下一轮利用现有文件和 `.part` 继续。
+- 已有 Active 记录会按数据库 `p_count` 和稳定分 P 标识复核非空媒体文件；缺集时自动续跑，完整时才跳过。
+- 收藏夹目录和媒体文件名会按完整路径预算截断；若 `download_path` 过长到无法保留唯一标识，程序会明确报错，避免名称碰撞。
+- 本设置只影响新下载或重新下载的资产，不会自动移动已经归档的旧目录。
 
 > `config.local.yaml` 只用于本地覆盖，不应放入发布包。Docker 部署应通过挂载 `config.yaml` 或其他部署侧配置管理方式提供运行配置。
 
@@ -155,9 +165,16 @@ python -m compileall main.py login.py app
 
 ---
 
-## 🧾 最新改进（v1.2.0）
+## 🧾 最新改进（v1.3.0）
 
 完整版本说明见 [CHANGELOG.md](CHANGELOG.md)。
+
+- 多 P 视频按独立页面下载；Plex 模式生成 `Season 01/S01E##`、`tvshow.nfo`、分集 NFO 和标准封面，平铺模式使用稳定 `P##` 命名。
+- Active 记录按 `p_count` 与稳定分 P 标识复核，缺集自动续跑；关键 NFO 或标准封面失败时不写入数据库完成状态。
+- 同时请求普通字幕和自动字幕，弹幕转换支持滚动、反向、顶部、底部及轨道防重叠，并隔离异常文件。
+- 收藏夹、资产目录和媒体文件名增加危险组件规范化和完整路径预算，避免 Windows 保留名、路径逃逸及唯一标识碰撞。
+
+### v1.2.0 改进
 
 - 同步列表读取增加有限重试、指数退避、HTTP 超时和来源隔离，不再把读取失败误判为空列表。
 - `yt-dlp` 下载增加可配置超时；超时后终止下载进程树、清理临时 Cookie，并保留可续传的非空 `.part` 文件。
@@ -195,9 +212,9 @@ python -m compileall main.py login.py app
 - [x] **全自动引擎**：无头守护进程，自动拉取账号下所有收藏夹，并支持配置文件指定拉取。
 - [x] **双重登录机制**：终端二维码扫码登录 + 手机号短信验证码登录。
 - [x] **最高画质下载**：基于 `yt-dlp` 的 4K/HDR 视频与高质量音频自动抓取及合并。
-- [x] **Plex/Jellyfin 元数据**：生成与媒体标题对应的 `.nfo` 元数据、下载封面图并记录 UP 主信息。
+- [x] **Plex/Jellyfin 元数据**：生成与媒体文件同名的 NFO 和标准封面；多 P 支持 `Season 01/S01E##` 剧集布局。
 - [x] **专栏图文支持**：自动识别收藏夹中的专栏文章，抓取正文转为 `Markdown`，并将网络图片本地化下载保存。
-- [x] **弹幕渲染器**：内置 `DanmakuConverter`，自动将 B 站 XML 弹幕渲染为各大播放器原生支持的高级 `.ass` 字幕。
+- [x] **弹幕渲染器**：将当前媒体的 B 站 XML 弹幕转换为 `.ass`，支持滚动/反向/顶部/底部布局和轨道防重叠。
 - [x] **资产保护机制**：独立实现的“墓碑机制（Tombstone）”与“孤本保护”，防止源端失效导致本地资产连带损失。
 - [x] **周期全量巡检**：自动记忆已归档资产，扫描时跳过重复下载并更新 `last_check`，默认每 6 小时重新巡检。
 - [x] **组件环境检查**：按策略检查 `yt-dlp`，自动更新前验证官方 SHA256；FFmpeg 只检查系统 PATH 或配置路径，不自动下载更新。

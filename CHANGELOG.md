@@ -4,6 +4,22 @@
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-08-11
+
+### 媒体库输出
+
+- `plex_mode` 现在真实控制多 P 布局：开启时生成 `Season 01/S01E##`、`tvshow.nfo` 和分集 NFO，关闭时使用不会互相覆盖的平铺 `P##` 文件。
+- 多 P 改为逐页下载，每页强制 `--no-playlist`；只有全部分 P 与关键 NFO 成功后才记录完成。
+- NFO 与媒体文件使用同一前缀，并从 yt-dlp 缩略图整理 `poster.jpg` 与分集 `-thumb.jpg`。
+- 同时请求普通字幕和自动字幕，只转换当前任务生成的 `.danmaku.xml`，不再扫描同目录的其他 XML。
+- 弹幕 ASS 增加滚动、反向、顶部和底部定位、文本转义及轨道容量控制；非法时间或单个转换异常不会中断已完成的媒体下载。
+- Active 记录会按 `p_count` 和稳定分 P 标识复核非空媒体文件，缺集时自动续跑；NFO 或标准封面写入失败不再写入数据库完成状态。
+- 收藏夹、资产目录和媒体文件名增加危险组件规范化及完整路径预算；根路径过长时会明确拒绝，避免截断唯一标识后发生碰撞。
+
+### 升级说明
+
+- 新布局只影响新下载或重新下载的资产，不会自动移动现有媒体目录。
+
 ## [1.2.0] - 2026-08-11
 
 ### 可靠性
@@ -58,6 +74,7 @@
 - 如果 `data/cookie.json` 曾被上传、打包或共享，应重新登录，使旧凭据失效。
 - 本版本不提供 EXE 或 App；跨平台独立可执行文件仍属于后续阶段。
 
-[Unreleased]: https://github.com/Stars4422335/BiliArchive-Pro/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/Stars4422335/BiliArchive-Pro/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.3.0
 [1.2.0]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.2.0
 [1.1.3]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.1.3

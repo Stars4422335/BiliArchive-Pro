@@ -7,7 +7,7 @@ system:
   db_path: "./data/bili_archive.db"
   cookie_path: "./data/cookie.json"
   min_disk_gb: 5               # 磁盘爆盘保护阈值 (GB)
-  plex_mode: true              # 开启 Plex 兼容模式 (多P视频独立成集)
+  plex_mode: true              # 多P使用 Season 01/S01E；false 时平铺为 P01/P02
   sync_watch_later: false      # 是否自动备份“稍后再看”列表
   check_update_on_start: false # 每次启动时检查组件更新
   scan_interval_seconds: 21600 # 每轮扫描结束后的休眠时间 (秒)

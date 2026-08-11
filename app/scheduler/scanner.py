@@ -1,10 +1,25 @@
 import asyncio
+import os
+import re
+
 from bilibili_api import aid2bvid
 from app.core.parser import BiliParser
 from app.core.downloader import Downloader
 from app.core.metadata import MetadataGenerator
 
+
 class FavScanner:
+    MAX_EXPECTED_PARTS = 1000
+    MEDIA_EXTENSIONS = {
+        ".mp4",
+        ".mkv",
+        ".webm",
+        ".mov",
+        ".m4v",
+        ".flv",
+        ".avi",
+    }
+
     def __init__(self, config, credential, db, path_mgr, uid=None):
         self.config = config
         network_config = config.get("network", {})
@@ -76,6 +91,186 @@ class FavScanner:
             return alternate_key, alternate_record
         return db_key, None
 
+    @staticmethod
+    def _page_number(page, fallback):
+        raw_number = page.get("page") if isinstance(page, dict) else None
+        if isinstance(raw_number, bool):
+            return fallback
+        try:
+            page_number = int(raw_number)
+        except (TypeError, ValueError):
+            return fallback
+        return page_number if page_number > 0 else fallback
+
+    @staticmethod
+    def _page_title(page, fallback):
+        if not isinstance(page, dict):
+            return fallback
+        return str(page.get("part") or page.get("title") or fallback).strip() or fallback
+
+    @classmethod
+    def _video_record_is_complete(cls, local_record):
+        raw_expected_count = local_record.get("p_count")
+        if isinstance(raw_expected_count, bool):
+            return False
+        try:
+            expected_count = int(raw_expected_count or 1)
+        except (TypeError, ValueError):
+            return False
+        if not 1 <= expected_count <= cls.MAX_EXPECTED_PARTS:
+            return False
+
+        bvid = str(local_record.get("bvid") or "").strip()
+        if not bvid:
+            return False
+
+        archive_path = local_record.get("path")
+        if not archive_path or not os.path.isdir(archive_path):
+            return False
+
+        completed_parts = set()
+        multi_part_pattern = re.compile(
+            rf"\[{re.escape(bvid)}-P([1-9][0-9]*)\]$"
+        )
+        for root, _, files in os.walk(archive_path):
+            for file_name in files:
+                extension = os.path.splitext(file_name)[1].lower()
+                if extension not in cls.MEDIA_EXTENSIONS:
+                    continue
+                file_path = os.path.join(root, file_name)
+                try:
+                    if os.path.getsize(file_path) <= 0:
+                        continue
+                except OSError:
+                    continue
+
+                stem = os.path.splitext(file_name)[0]
+                if expected_count == 1:
+                    if stem.endswith(f"[{bvid}]"):
+                        return True
+                    continue
+
+                match = multi_part_pattern.search(stem)
+                if not match:
+                    continue
+                part_number = int(match.group(1))
+                if 1 <= part_number <= expected_count:
+                    completed_parts.add(part_number)
+                if len(completed_parts) == expected_count:
+                    return True
+        return False
+
+    async def _download_video_item(self, source_name, item):
+        """下载一个视频，并保证多P媒体、NFO 与封面使用同一布局。"""
+        bvid = str(item.get("bvid") or "").strip()
+        title = str(item.get("title") or "Unknown")
+        video_dir = self.path_mgr.get_video_dir(source_name, title, bvid)
+        is_multi, pages = await self.parser.check_multi_p(bvid)
+
+        if not is_multi:
+            media_dir, file_name = self.path_mgr.get_video_output(
+                video_dir,
+                title,
+                bvid,
+            )
+            success = self.downloader.download_video(
+                url=f"https://www.bilibili.com/video/{bvid}",
+                save_dir=media_dir,
+                file_name=file_name,
+                cookie_file_path=self.cookie_path,
+            )
+            if not success:
+                return None
+
+            if not MetadataGenerator.create_nfo(
+                item,
+                media_dir,
+                status="Active",
+                file_stem=file_name,
+            ):
+                return None
+            poster_path = MetadataGenerator.copy_artwork(
+                media_dir,
+                file_name,
+                os.path.join(video_dir, "poster.jpg"),
+            )
+            if not poster_path:
+                print(f"[-] 视频封面整理失败，未记录完成状态: {bvid}")
+                return None
+            return video_dir, 1
+
+        if not pages:
+            print(f"[-] 多P视频缺少分集信息，跳过本轮完成标记: {bvid}")
+            return None
+
+        part_count = len(pages)
+        for index, page in enumerate(pages, start=1):
+            page_number = self._page_number(page, index)
+            part_title = self._page_title(page, f"P{index}")
+            media_dir, file_name = self.path_mgr.get_video_output(
+                video_dir,
+                title,
+                bvid,
+                part_number=index,
+                part_title=part_title,
+                part_count=part_count,
+            )
+            success = self.downloader.download_video(
+                url=f"https://www.bilibili.com/video/{bvid}?p={page_number}",
+                save_dir=media_dir,
+                file_name=file_name,
+                cookie_file_path=self.cookie_path,
+            )
+            if not success:
+                print(f"[-] 多P视频第 {index}/{part_count} 集下载失败: {bvid}")
+                return None
+
+            if getattr(self.path_mgr, "plex_mode", False):
+                nfo_path = MetadataGenerator.create_episode_nfo(
+                    item,
+                    media_dir,
+                    file_name,
+                    index,
+                    part_title,
+                )
+            else:
+                part_info = dict(item)
+                part_info["title"] = part_title
+                part_info["bvid"] = f"{bvid}-P{index}"
+                nfo_path = MetadataGenerator.create_nfo(
+                    part_info,
+                    media_dir,
+                    status="Active",
+                    file_stem=file_name,
+                )
+            if not nfo_path:
+                return None
+
+            thumb_path = MetadataGenerator.copy_artwork(
+                media_dir,
+                file_name,
+                os.path.join(media_dir, f"{file_name}-thumb.jpg"),
+            )
+            if not thumb_path:
+                print(
+                    f"[-] 多P视频第 {index}/{part_count} 集封面整理失败: {bvid}"
+                )
+                return None
+            if index == 1:
+                poster_path = MetadataGenerator.copy_artwork(
+                    media_dir,
+                    file_name,
+                    os.path.join(video_dir, "poster.jpg"),
+                )
+                if not poster_path:
+                    print(f"[-] 多P视频根封面整理失败，未记录完成状态: {bvid}")
+                    return None
+
+        if getattr(self.path_mgr, "plex_mode", False):
+            if not MetadataGenerator.create_tvshow_nfo(item, video_dir):
+                return None
+        return video_dir, part_count
+
     async def scan_favorite(self, fav_id, fav_name):
         # 检查全局下载限制（0或None表示无限制）
         if self.max_global_downloads and self.global_download_count >= self.max_global_downloads:
@@ -125,8 +320,14 @@ class FavScanner:
                         tomb_path = self.path_mgr.get_video_dir(fav_name, "已失效视频", db_key)
                         tomb_path = self.path_mgr.mark_as_deleted(tomb_path, self.config['archive_protection']['tombstone_prefix'])
                         tombstone_item = {**item, "bvid": db_key}
-                        MetadataGenerator.create_nfo(tombstone_item, tomb_path, status="Tombstoned")
-                        self.db.update_asset(db_key, "已失效视频", "unknown", 1, tomb_path)
+                        if MetadataGenerator.create_nfo(
+                            tombstone_item,
+                            tomb_path,
+                            status="Tombstoned",
+                        ):
+                            self.db.update_asset(db_key, "已失效视频", "unknown", 1, tomb_path)
+                        else:
+                            print(f"[-] 墓碑 NFO 写入失败，未记录完成状态: {db_key}")
                     elif local_record['status'] == 0:
                         print(f"[!] 警告触发：视频源端已失效，启动孤本保护: {local_record['title']}")
                         new_path = self.path_mgr.mark_as_deleted(local_record['path'], self.config['archive_protection']['mark_deleted_prefix'])
@@ -136,27 +337,17 @@ class FavScanner:
                 # 【情况B：正常视频处理】
                 if asset_type == "video":
                     if local_record and local_record['status'] == 0:
-                        print(f"[*] 已在库中，跳过并更新存活标记: {title}")
-                        self.db.update_last_check(db_key)
-                        continue
+                        if self._video_record_is_complete(local_record):
+                            print(f"[*] 已在库中，跳过并更新存活标记: {title}")
+                            self.db.update_last_check(db_key)
+                            continue
+                        print(f"[!] 数据库记录对应媒体不完整，准备续跑修复: {title}")
                         
                     print(f"[*] 发现新视频，准备抓取: {title}")
-                    save_path = self.path_mgr.get_video_dir(fav_name, title, bvid)
+                    download_result = await self._download_video_item(fav_name, item)
 
-                    # 检查多P
-                    is_multi, pages = await self.parser.check_multi_p(bvid)
-                    p_count = len(pages) if is_multi else 1
-
-                    # 呼叫下载引擎
-                    success = self.downloader.download_video(
-                        url=f"https://www.bilibili.com/video/{bvid}",
-                        save_dir=save_path,
-                        file_name=self.path_mgr.truncate_filename(title, bvid),
-                        cookie_file_path=self.cookie_path
-                    )
-
-                    if success:
-                        MetadataGenerator.create_nfo(item, save_path, status="Active")
+                    if download_result:
+                        save_path, p_count = download_result
                         self.db.update_asset(db_key, title, "video", 0, save_path, p_count)
                         self.global_download_count += 1  # 【全局限制】计数
                         
@@ -183,7 +374,14 @@ class FavScanner:
 
                     if success:
                         # 同时生成 NFO 元数据（Plex 兼容）
-                        MetadataGenerator.create_nfo(item, save_path, status="Active")
+                        nfo_path = MetadataGenerator.create_nfo(
+                            item,
+                            save_path,
+                            status="Active",
+                        )
+                        if not nfo_path:
+                            print(f"[-] 专栏 NFO 写入失败，未记录完成状态: {article_key}")
+                            continue
                         self.db.update_asset(article_key, title, "article", 0, save_path)
                         self.global_download_count += 1
 
@@ -225,8 +423,14 @@ class FavScanner:
                     tomb_path = self.path_mgr.get_video_dir("稍后再看", "已失效视频", db_key)
                     tomb_path = self.path_mgr.mark_as_deleted(tomb_path, self.config['archive_protection']['tombstone_prefix'])
                     tombstone_item = {**item, "bvid": db_key}
-                    MetadataGenerator.create_nfo(tombstone_item, tomb_path, status="Tombstoned")
-                    self.db.update_asset(db_key, "已失效视频", "unknown", 1, tomb_path)
+                    if MetadataGenerator.create_nfo(
+                        tombstone_item,
+                        tomb_path,
+                        status="Tombstoned",
+                    ):
+                        self.db.update_asset(db_key, "已失效视频", "unknown", 1, tomb_path)
+                    else:
+                        print(f"[-] 墓碑 NFO 写入失败，未记录完成状态: {db_key}")
                 elif local_record['status'] == 0:
                     print(f"[!] 警告触发：视频源端已失效，启动孤本保护: {local_record['title']}")
                     new_path = self.path_mgr.mark_as_deleted(local_record['path'], self.config['archive_protection']['mark_deleted_prefix'])
@@ -235,25 +439,17 @@ class FavScanner:
 
             # 【情况B：正常视频处理】
             if local_record and local_record['status'] == 0:
-                print(f"[*] 已在库中，跳过并更新存活标记: {title}")
-                self.db.update_last_check(db_key)
-                continue
+                if self._video_record_is_complete(local_record):
+                    print(f"[*] 已在库中，跳过并更新存活标记: {title}")
+                    self.db.update_last_check(db_key)
+                    continue
+                print(f"[!] 数据库记录对应媒体不完整，准备续跑修复: {title}")
                 
             print(f"[*] 发现新视频，准备抓取: {title}")
-            save_path = self.path_mgr.get_video_dir("稍后再看", title, bvid)
+            download_result = await self._download_video_item("稍后再看", item)
 
-            is_multi, pages = await self.parser.check_multi_p(bvid)
-            p_count = len(pages) if is_multi else 1
-
-            success = self.downloader.download_video(
-                url=f"https://www.bilibili.com/video/{bvid}",
-                save_dir=save_path,
-                file_name=self.path_mgr.truncate_filename(title, bvid),
-                cookie_file_path=self.cookie_path
-            )
-
-            if success:
-                MetadataGenerator.create_nfo(item, save_path, status="Active")
+            if download_result:
+                save_path, p_count = download_result
                 self.db.update_asset(db_key, title, "video", 0, save_path, p_count)
                 self.global_download_count += 1
                 
@@ -299,33 +495,31 @@ class FavScanner:
                         tomb_path = self.path_mgr.get_video_dir(collection_name, "已失效视频", db_key)
                         tomb_path = self.path_mgr.mark_as_deleted(tomb_path, self.config['archive_protection']['tombstone_prefix'])
                         tombstone_item = {**item, "bvid": db_key}
-                        MetadataGenerator.create_nfo(tombstone_item, tomb_path, status="Tombstoned")
-                        self.db.update_asset(db_key, "已失效视频", "unknown", 1, tomb_path)
+                        if MetadataGenerator.create_nfo(
+                            tombstone_item,
+                            tomb_path,
+                            status="Tombstoned",
+                        ):
+                            self.db.update_asset(db_key, "已失效视频", "unknown", 1, tomb_path)
+                        else:
+                            print(f"[-] 墓碑 NFO 写入失败，未记录完成状态: {db_key}")
                     elif local_record['status'] == 0:
                         new_path = self.path_mgr.mark_as_deleted(local_record['path'], self.config['archive_protection']['mark_deleted_prefix'])
                         self.db.update_asset(db_key, local_record['title'], local_record['type'], 2, new_path)
                     continue
 
                 if local_record and local_record['status'] == 0:
-                    print(f"[*] 已在库中，跳过并更新存活标记: {title}")
-                    self.db.update_last_check(db_key)
-                    continue
+                    if self._video_record_is_complete(local_record):
+                        print(f"[*] 已在库中，跳过并更新存活标记: {title}")
+                        self.db.update_last_check(db_key)
+                        continue
+                    print(f"[!] 数据库记录对应媒体不完整，准备续跑修复: {title}")
                     
                 print(f"[*] 发现新视频，准备抓取: {title}")
-                save_path = self.path_mgr.get_video_dir(collection_name, title, bvid)
+                download_result = await self._download_video_item(collection_name, item)
 
-                is_multi, pages = await self.parser.check_multi_p(bvid)
-                p_count = len(pages) if is_multi else 1
-
-                success = self.downloader.download_video(
-                    url=f"https://www.bilibili.com/video/{bvid}",
-                    save_dir=save_path,
-                    file_name=self.path_mgr.truncate_filename(title, bvid),
-                    cookie_file_path=self.cookie_path
-                )
-
-                if success:
-                    MetadataGenerator.create_nfo(item, save_path, status="Active")
+                if download_result:
+                    save_path, p_count = download_result
                     self.db.update_asset(db_key, title, "video", 0, save_path, p_count)
                     self.global_download_count += 1
                     

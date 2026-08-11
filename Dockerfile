@@ -3,13 +3,13 @@ FROM python:3.11-slim
 ARG DEBIAN_MIRROR=https://deb.debian.org
 
 LABEL org.opencontainers.image.title="BiliArchive-Pro" \
-      org.opencontainers.image.version="1.2.0" \
+      org.opencontainers.image.version="1.3.0" \
       org.opencontainers.image.source="https://github.com/Stars4422335/BiliArchive-Pro" \
       org.opencontainers.image.licenses="GPL-3.0-only"
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
-    BILIARCHIVE_VERSION=1.2.0
+    BILIARCHIVE_VERSION=1.3.0
 
 WORKDIR /app
 

@@ -1,4 +1,3 @@
-import glob
 import json
 import math
 import os
@@ -205,6 +204,36 @@ class Downloader:
         print(f"[*] 风控保护：随机休眠 {delay:.1f} 秒...")
         time.sleep(delay)
 
+    @staticmethod
+    def _convert_downloaded_danmaku(save_dir, file_name):
+        """只转换当前下载任务生成的 .danmaku.xml，避免扫描其他资产。"""
+        prefix = f"{file_name}."
+        try:
+            entries = list(os.scandir(save_dir))
+        except OSError as exc:
+            print(f"[-] 弹幕文件扫描失败: {exc}")
+            return
+
+        for entry in entries:
+            try:
+                is_file = entry.is_file(follow_symlinks=False)
+            except OSError:
+                continue
+            if not is_file or not entry.name.startswith(prefix):
+                continue
+            if not entry.name.lower().endswith(".danmaku.xml"):
+                continue
+            xml_sub = entry.path
+            ass_path = xml_sub.rsplit('.', 1)[0] + ".ass"
+            print(f"[*] 正在将弹幕 {os.path.basename(xml_sub)} 转为 ASS 字幕...")
+            try:
+                converted = DanmakuConverter.xml_to_ass(xml_sub, ass_path)
+            except Exception as exc:
+                print(f"[-] 弹幕转换异常，已保留原 XML: {exc}")
+                continue
+            if converted:
+                print(f"[+成功] 弹幕转换完成: {os.path.basename(ass_path)}")
+
     def has_enough_disk_space(self, save_dir):
         min_disk_gb = self.config.get('system', {}).get('min_disk_gb', 0)
         if not min_disk_gb:
@@ -263,7 +292,8 @@ class Downloader:
         netscape_cookie = self.convert_cookie_to_netscape(cookie_file_path)
 
         try:
-            output_template = os.path.join(save_dir, f"{file_name}.%(ext)s")
+            template_file_name = file_name.replace("%", "%%")
+            output_template = os.path.join(save_dir, f"{template_file_name}.%(ext)s")
             yt_dlp_path = self.resolve_executable(self.yt_dlp_path, "yt-dlp")
             if not yt_dlp_path:
                 return False
@@ -274,6 +304,7 @@ class Downloader:
                 yt_dlp_path,
                 "-f", "bestvideo+bestaudio/best",
                 "--merge-output-format", "mp4",
+                "--no-playlist",
                 "--continue",
                 "--part",
                 "--cookies", netscape_cookie,
@@ -281,6 +312,7 @@ class Downloader:
                 "--write-thumbnail",
                 "--convert-thumbnails", "jpg",
                 "--write-subs",
+                "--write-auto-subs",
                 "--sub-langs", "all",
                 "--ffmpeg-location", ffmpeg_location,
                 "-o", output_template,
@@ -297,12 +329,7 @@ class Downloader:
                 )
                 print(f"[+] 下载顺利完成: {file_name}")
 
-                xml_subs = glob.glob(os.path.join(save_dir, "*.xml"))
-                for xml_sub in xml_subs:
-                    ass_path = xml_sub.rsplit('.', 1)[0] + ".ass"
-                    print(f"[*] 正在将弹幕 {os.path.basename(xml_sub)} 转为 ASS 字幕...")
-                    if DanmakuConverter.xml_to_ass(xml_sub, ass_path):
-                        print(f"[+成功] 弹幕转换完成: {os.path.basename(ass_path)}")
+                self._convert_downloaded_danmaku(save_dir, file_name)
 
                 self.random_sleep("download")
                 return True
