@@ -1,4 +1,5 @@
 import asyncio
+from bilibili_api import aid2bvid
 from app.core.parser import BiliParser
 from app.core.downloader import Downloader
 from app.core.metadata import MetadataGenerator
@@ -34,6 +35,47 @@ class FavScanner:
         print("[*] 准备拉取下一页...")
         await asyncio.sleep(2)
 
+    @staticmethod
+    def _video_aid(item):
+        for field in ('aid', 'id'):
+            raw_id = item.get(field)
+            if raw_id is None or isinstance(raw_id, bool):
+                continue
+            id_text = str(raw_id).strip()
+            if id_text.lower().startswith('av'):
+                id_text = id_text[2:]
+            if id_text.isdigit() and int(id_text) > 0:
+                return int(id_text)
+        return None
+
+    @classmethod
+    def _video_asset_key(cls, item):
+        bvid = str(item.get('bvid') or '').strip()
+        if bvid:
+            return bvid
+
+        aid = cls._video_aid(item)
+        return f"av{aid}" if aid is not None else None
+
+    def _resolve_video_record(self, item, db_key):
+        local_record = self.db.get_asset(db_key)
+        if local_record:
+            return db_key, local_record
+
+        aid = self._video_aid(item)
+        if aid is None:
+            return db_key, None
+
+        bvid = str(item.get('bvid') or '').strip()
+        alternate_key = f"av{aid}" if bvid else aid2bvid(aid)
+        if alternate_key == db_key:
+            return db_key, None
+
+        alternate_record = self.db.get_asset(alternate_key)
+        if alternate_record:
+            return alternate_key, alternate_record
+        return db_key, None
+
     async def scan_favorite(self, fav_id, fav_name):
         # 检查全局下载限制（0或None表示无限制）
         if self.max_global_downloads and self.global_download_count >= self.max_global_downloads:
@@ -56,7 +98,7 @@ class FavScanner:
                 break
 
             for item in items:
-                bvid = item.get('bvid')
+                bvid = str(item.get('bvid') or '').strip()
                 title = item.get('title')
                 asset_type = item.get('type')
                 
@@ -64,23 +106,31 @@ class FavScanner:
                 if asset_type == "article":
                     db_key = f"cv{item.get('id')}"
                 else:
-                    db_key = bvid
+                    db_key = self._video_asset_key(item)
+
+                if not db_key:
+                    print("[!] 跳过缺少 bvid、aid 和 id 的视频条目，未写入数据库。")
+                    continue
 
                 # 去数据库查一下这哥们以前下过没
-                local_record = self.db.get_asset(db_key)
+                if asset_type == "article":
+                    local_record = self.db.get_asset(db_key)
+                else:
+                    db_key, local_record = self._resolve_video_record(item, db_key)
 
                 # 【情况A：发现源端已失效的视频】（仅对视频类型生效，专栏 bvid 为空属正常）
                 if asset_type != "article" and (title == "已失效视频" or not bvid):
                     if not local_record:
-                        print(f"[-] 发现失效视频，本地无存档，准备创建墓碑: {bvid}")
-                        tomb_path = self.path_mgr.get_video_dir(fav_name, "已失效视频", bvid or "unknown")
+                        print(f"[-] 发现失效视频，本地无存档，准备创建墓碑: {db_key}")
+                        tomb_path = self.path_mgr.get_video_dir(fav_name, "已失效视频", db_key)
                         tomb_path = self.path_mgr.mark_as_deleted(tomb_path, self.config['archive_protection']['tombstone_prefix'])
-                        MetadataGenerator.create_nfo(item, tomb_path, status="Tombstoned")
-                        self.db.update_asset(bvid, "已失效视频", "unknown", 1, tomb_path)
+                        tombstone_item = {**item, "bvid": db_key}
+                        MetadataGenerator.create_nfo(tombstone_item, tomb_path, status="Tombstoned")
+                        self.db.update_asset(db_key, "已失效视频", "unknown", 1, tomb_path)
                     elif local_record['status'] == 0:
                         print(f"[!] 警告触发：视频源端已失效，启动孤本保护: {local_record['title']}")
                         new_path = self.path_mgr.mark_as_deleted(local_record['path'], self.config['archive_protection']['mark_deleted_prefix'])
-                        self.db.update_asset(bvid, local_record['title'], local_record['type'], 2, new_path)
+                        self.db.update_asset(db_key, local_record['title'], local_record['type'], 2, new_path)
                     continue
 
                 # 【情况B：正常视频处理】
@@ -107,7 +157,7 @@ class FavScanner:
 
                     if success:
                         MetadataGenerator.create_nfo(item, save_path, status="Active")
-                        self.db.update_asset(bvid, title, "video", 0, save_path, p_count)
+                        self.db.update_asset(db_key, title, "video", 0, save_path, p_count)
                         self.global_download_count += 1  # 【全局限制】计数
                         
                         # 检查是否达到全局限制（0或None表示无限制）
@@ -159,24 +209,28 @@ class FavScanner:
             return
 
         for item in items:
-            bvid = item.get('bvid')
+            bvid = str(item.get('bvid') or '').strip()
             title = item.get('title')
             # 确定数据库主键
-            db_key = bvid
-            local_record = self.db.get_asset(db_key)
+            db_key = self._video_asset_key(item)
+            if not db_key:
+                print("[!] 跳过缺少 bvid、aid 和 id 的稍后再看条目，未写入数据库。")
+                continue
+            db_key, local_record = self._resolve_video_record(item, db_key)
 
             # 【情况A：发现源端已失效的视频】
             if title == "已失效视频" or not bvid:
                 if not local_record:
-                    print(f"[-] 发现失效视频，本地无存档，准备创建墓碑: {bvid}")
-                    tomb_path = self.path_mgr.get_video_dir("稍后再看", "已失效视频", bvid or "unknown")
+                    print(f"[-] 发现失效视频，本地无存档，准备创建墓碑: {db_key}")
+                    tomb_path = self.path_mgr.get_video_dir("稍后再看", "已失效视频", db_key)
                     tomb_path = self.path_mgr.mark_as_deleted(tomb_path, self.config['archive_protection']['tombstone_prefix'])
-                    MetadataGenerator.create_nfo(item, tomb_path, status="Tombstoned")
-                    self.db.update_asset(bvid, "已失效视频", "unknown", 1, tomb_path)
+                    tombstone_item = {**item, "bvid": db_key}
+                    MetadataGenerator.create_nfo(tombstone_item, tomb_path, status="Tombstoned")
+                    self.db.update_asset(db_key, "已失效视频", "unknown", 1, tomb_path)
                 elif local_record['status'] == 0:
                     print(f"[!] 警告触发：视频源端已失效，启动孤本保护: {local_record['title']}")
                     new_path = self.path_mgr.mark_as_deleted(local_record['path'], self.config['archive_protection']['mark_deleted_prefix'])
-                    self.db.update_asset(bvid, local_record['title'], local_record['type'], 2, new_path)
+                    self.db.update_asset(db_key, local_record['title'], local_record['type'], 2, new_path)
                 continue
 
             # 【情况B：正常视频处理】
@@ -200,14 +254,14 @@ class FavScanner:
 
             if success:
                 MetadataGenerator.create_nfo(item, save_path, status="Active")
-                self.db.update_asset(bvid, title, "video", 0, save_path, p_count)
+                self.db.update_asset(db_key, title, "video", 0, save_path, p_count)
                 self.global_download_count += 1
                 
                 if self.max_global_downloads and self.global_download_count >= self.max_global_downloads:
                     print(f"\n[✓] 【全局限制】已成功下载 {self.max_global_downloads} 个视频，测试完成！")
                     return
 
-    async def scan_collection(self, collection_id, collection_name):
+    async def scan_collection(self, collection_id, collection_name, mid):
         """扫描UP主的合集列表"""
         if self.max_global_downloads and self.global_download_count >= self.max_global_downloads:
             print(f"[*] 【全局限制】已达到最大下载数量，跳过合集: {collection_name}")
@@ -219,7 +273,11 @@ class FavScanner:
         has_more = True
 
         while has_more:
-            items, has_more = await self.parser.get_collection_list(collection_id, page)
+            items, has_more = await self.parser.get_collection_list(
+                collection_id,
+                page,
+                mid=mid,
+            )
             if not items:
                 if has_more:
                     page += 1
@@ -228,20 +286,24 @@ class FavScanner:
                 break
 
             for item in items:
-                bvid = item.get('bvid')
+                bvid = str(item.get('bvid') or '').strip()
                 title = item.get('title')
-                db_key = bvid
-                local_record = self.db.get_asset(db_key)
+                db_key = self._video_asset_key(item)
+                if not db_key:
+                    print("[!] 跳过缺少 bvid、aid 和 id 的合集条目，未写入数据库。")
+                    continue
+                db_key, local_record = self._resolve_video_record(item, db_key)
 
                 if title == "已失效视频" or not bvid:
                     if not local_record:
-                        tomb_path = self.path_mgr.get_video_dir(collection_name, "已失效视频", bvid or "unknown")
+                        tomb_path = self.path_mgr.get_video_dir(collection_name, "已失效视频", db_key)
                         tomb_path = self.path_mgr.mark_as_deleted(tomb_path, self.config['archive_protection']['tombstone_prefix'])
-                        MetadataGenerator.create_nfo(item, tomb_path, status="Tombstoned")
-                        self.db.update_asset(bvid, "已失效视频", "unknown", 1, tomb_path)
+                        tombstone_item = {**item, "bvid": db_key}
+                        MetadataGenerator.create_nfo(tombstone_item, tomb_path, status="Tombstoned")
+                        self.db.update_asset(db_key, "已失效视频", "unknown", 1, tomb_path)
                     elif local_record['status'] == 0:
                         new_path = self.path_mgr.mark_as_deleted(local_record['path'], self.config['archive_protection']['mark_deleted_prefix'])
-                        self.db.update_asset(bvid, local_record['title'], local_record['type'], 2, new_path)
+                        self.db.update_asset(db_key, local_record['title'], local_record['type'], 2, new_path)
                     continue
 
                 if local_record and local_record['status'] == 0:
@@ -264,7 +326,7 @@ class FavScanner:
 
                 if success:
                     MetadataGenerator.create_nfo(item, save_path, status="Active")
-                    self.db.update_asset(bvid, title, "video", 0, save_path, p_count)
+                    self.db.update_asset(db_key, title, "video", 0, save_path, p_count)
                     self.global_download_count += 1
                     
                     if self.max_global_downloads and self.global_download_count >= self.max_global_downloads:

@@ -206,11 +206,23 @@ def test_collection_falls_back_and_preserves_real_empty_result(monkeypatch):
         retry_backoff_seconds=0,
     )
 
-    items, has_more = asyncio.run(parser.get_collection_list(123, page=1))
+    items, has_more = asyncio.run(
+        parser.get_collection_list(123, page=1, mid=456)
+    )
 
     get_calls = [call[1] for call in calls if call[0] == "get"]
     assert len(get_calls) == 2
     assert "/x/series/archives" in get_calls[0]
     assert "/seasons_archives_list" in get_calls[1]
+    assert all("mid=456" in url for url in get_calls)
+    assert all("mid=0" not in url and "mid=1" not in url for url in get_calls)
     assert items == []
     assert has_more is False
+
+
+@pytest.mark.parametrize("mid", [None, 0, -1, "invalid"])
+def test_collection_rejects_missing_or_invalid_mid(mid):
+    parser = BiliParser(credential=None)
+
+    with pytest.raises(ValueError, match="mid 必须是正整数"):
+        asyncio.run(parser.get_collection_list(123, mid=mid))

@@ -3,7 +3,7 @@
 > **专业的 Bilibili 个人数字资产全量备份系统**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Release: v1.1.3](https://img.shields.io/badge/release-v1.1.3-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.1.3)
+[![Release: v1.2.0](https://img.shields.io/badge/release-v1.2.0-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.2.0)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 
 **BiliArchive-Pro** 旨在为 B 站深度用户提供一套稳定、安全且符合影视库管理规范（如 Plex、Jellyfin、Emby）的本地自动化备份方案。它不仅是一个支持最高 4K/HDR 画质的下载器，更是一个智能的**个人数字图书馆管理员**。
@@ -86,6 +86,7 @@ system:
   plex_mode: true                    # 开启后，多P视频会独立建文件夹，适配 Plex/Jellyfin
   check_update_on_start: false       # 是否在启动时执行组件检查策略
   max_downloads_per_run: 0           # 0代表无限制。若只想测试，可改为 5
+  download_timeout_seconds: 7200     # 单个 yt-dlp 任务超时；0 表示不限制
 
 network:
   sync_retry_attempts: 3            # 同步列表读取最大尝试次数
@@ -97,6 +98,12 @@ components:
   yt-dlp:
     strategy: "auto"                # 校验后更新；notify 仅提醒；off 关闭
 
+sync_collections:
+  # mid 是合集所属 UP 主的 UID，id 是合集或系列 ID
+  # - id: 67890
+  #   mid: 12345
+  #   name: "某个UP主的精华合集"
+
 favorites:
   # 留空此项将【自动拉取并备份您账号下的所有收藏夹】！
   # 如果只想备份特定收藏夹，请取消下方注释并填入：
@@ -107,6 +114,8 @@ favorites:
 个人测试配置请写入根目录的 `config.local.yaml`。程序会在读取 `config.yaml` 后递归合并本地配置，其中列表和普通值以本地文件为准。该文件默认被 Git 和 Docker 构建忽略，适合保存本机收藏夹、开关和路径设置。
 
 同步列表请求失败时会按 `sync_retry_attempts` 进行有限重试。重试耗尽后，当前收藏夹、稍后再看或合集会被标记为本轮失败，其他来源仍会继续扫描，下一轮再重试失败来源。
+
+单个下载超过 `download_timeout_seconds` 后会终止 yt-dlp/FFmpeg 进程树、返回失败并清理临时 Cookie。非空 `.part` 文件会保留并在下一轮通过 `yt-dlp --continue` 续传，空残留会自动清理。
 
 > `config.local.yaml` 只用于本地覆盖，不应放入发布包。Docker 部署应通过挂载 `config.yaml` 或其他部署侧配置管理方式提供运行配置。
 
@@ -146,9 +155,17 @@ python -m compileall main.py login.py app
 
 ---
 
-## 🧾 最新改进（v1.1.3）
+## 🧾 最新改进（v1.2.0）
 
 完整版本说明见 [CHANGELOG.md](CHANGELOG.md)。
+
+- 同步列表读取增加有限重试、指数退避、HTTP 超时和来源隔离，不再把读取失败误判为空列表。
+- `yt-dlp` 下载增加可配置超时；超时后终止下载进程树、清理临时 Cookie，并保留可续传的非空 `.part` 文件。
+- 失效视频缺少 `bvid` 时使用 `av{aid/id}` 稳定键，避免多个条目共用空数据库主键和 `unknown` 目录。
+- SQLite 启动时自动补齐旧表字段、修复历史空键，并在退出、异常或取消时关闭连接。
+- 合集同步要求配置所属 UP 主的 `mid`，两个合集 API 不再使用无效的硬编码 UID。
+
+### v1.1.3 改进
 
 - 项目许可证声明统一为 GPLv3。
 - 新增 `config.local.yaml` 本地覆盖机制，个人测试配置不再污染受跟踪模板。

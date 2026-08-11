@@ -110,8 +110,14 @@ async def daemon_loop(config, cred, uid):
     if config.get('system', {}).get('check_update_on_start', False):
         await ComponentUpdater(config).check_all()
 
-    # 初始化核心组件
     db = DatabaseManager(config['system']['db_path'])
+    try:
+        await _run_scan_loop(config, cred, uid, db)
+    finally:
+        db.close()
+
+
+async def _run_scan_loop(config, cred, uid, db):
     path_mgr = PathManager(config['system']['download_path'], config['system']['plex_mode'])
     scanner = FavScanner(config, cred, db, path_mgr, uid=uid)
 
@@ -173,22 +179,46 @@ async def daemon_loop(config, cred, uid):
                 if not completed:
                     incomplete_sources.append(label)
 
-        # 接续处理稍后再看
+        # 接续处理合集
         sync_collections = config.get('sync_collections', [])
         if sync_collections:
             for coll in sync_collections:
-                if not scanner.max_global_downloads or scanner.global_download_count < scanner.max_global_downloads:
-                    collection_name = coll.get('name', f"合集_{coll['id']}")
-                    label = f"合集 {collection_name} ({coll['id']})"
-                    completed = await _run_source_scan(
-                        label,
-                        lambda coll=coll, collection_name=collection_name: scanner.scan_collection(
-                            coll['id'],
-                            collection_name,
-                        ),
+                if scanner.max_global_downloads and scanner.global_download_count >= scanner.max_global_downloads:
+                    break
+                if not isinstance(coll, dict):
+                    label = "无效合集配置"
+                    print("[-] 合集配置必须是包含 id、mid 和 name 的映射。")
+                    incomplete_sources.append(label)
+                    continue
+
+                try:
+                    collection_id = int(coll.get('id'))
+                    collection_mid = int(coll.get('mid'))
+                    if collection_id <= 0 or collection_mid <= 0:
+                        raise ValueError
+                except (TypeError, ValueError):
+                    label = f"合集 {coll.get('name', '未命名')}"
+                    print(
+                        f"[-] {label} 缺少有效的 id 或 mid；"
+                        "mid 必须是合集所属 UP 主的 UID。"
                     )
-                    if not completed:
-                        incomplete_sources.append(label)
+                    incomplete_sources.append(label)
+                    continue
+
+                collection_name = coll.get('name') or f"合集_{collection_id}"
+                label = f"合集 {collection_name} ({collection_id})"
+                completed = await _run_source_scan(
+                    label,
+                    lambda collection_id=collection_id,
+                    collection_mid=collection_mid,
+                    collection_name=collection_name: scanner.scan_collection(
+                        collection_id,
+                        collection_name,
+                        collection_mid,
+                    ),
+                )
+                if not completed:
+                    incomplete_sources.append(label)
 
         # 如果达到了 limit，则直接退出整个程序
         if scanner.max_global_downloads and scanner.global_download_count >= scanner.max_global_downloads:
@@ -228,16 +258,26 @@ if __name__ == "__main__":
         print("[*] 正在以 CLI 守护进程模式运行...")
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        cred, uid = loop.run_until_complete(check_cookie(config['system']['cookie_path']))
-        
-        if not cred:
-            exit(1)
-        
+        daemon_task = None
         try:
-            loop.run_until_complete(daemon_loop(config, cred, uid))
+            cred, uid = loop.run_until_complete(
+                check_cookie(config['system']['cookie_path'])
+            )
+            if not cred:
+                raise SystemExit(1)
+
+            daemon_task = loop.create_task(daemon_loop(config, cred, uid))
+            loop.run_until_complete(daemon_task)
         except KeyboardInterrupt:
             print("\n[+] 接收到 Ctrl+C，正在安全关闭数据库与下载任务...")
-            exit(0)
+            if daemon_task is not None and not daemon_task.done():
+                daemon_task.cancel()
+                try:
+                    loop.run_until_complete(daemon_task)
+                except asyncio.CancelledError:
+                    pass
+        finally:
+            loop.close()
     else:
         print("[!] 请加上 --cli 参数运行： python main.py --cli")
         print("[!] 桌面 GUI 托盘模式正在开发中。")

@@ -12,12 +12,14 @@ system:
   check_update_on_start: false # 每次启动时检查组件更新
   scan_interval_seconds: 21600 # 每轮扫描结束后的休眠时间 (秒)
   max_downloads_per_run: 0     # 每次运行最大下载视频数 (0=无限制，下载全部；建议测试时设为1)
+  download_timeout_seconds: 7200 # 单个 yt-dlp 任务超时；0 表示不限制
 
 sync_collections:
   # 此处填入您想要下载的UP主“合集/列表”(Season/Series)
-  # 可以通过填写 season_id 来实现，例如某个合集的链接是：space.bilibili.com/12345/channel/collectiondetail?sid=67890
-  # 那么 id 就是 67890 (如果有多个请往下换行添加)
+  # 例如链接为 space.bilibili.com/12345/channel/collectiondetail?sid=67890
+  # mid 是 UP 主 UID 12345，id 是合集/系列 ID 67890
   # - id: 67890
+  #   mid: 12345
   #   name: "某个UP主的精华合集"
 
 network:

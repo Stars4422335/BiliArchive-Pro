@@ -22,6 +22,17 @@ class DummyScanner:
     async def scan_watch_later(self):
         pass
 
+    async def scan_collection(self, collection_id, collection_name, mid):
+        pass
+
+
+class DummyDatabase:
+    def __init__(self):
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+
 
 class DummyUpdater:
     called = False
@@ -53,7 +64,7 @@ def base_config():
 
 def test_daemon_loop_runs_component_update_when_enabled(monkeypatch):
     DummyUpdater.called = False
-    monkeypatch.setattr(main, "DatabaseManager", lambda db_path: object())
+    monkeypatch.setattr(main, "DatabaseManager", lambda db_path: DummyDatabase())
     monkeypatch.setattr(main, "PathManager", lambda root_path, plex_mode: object())
     monkeypatch.setattr(main, "FavScanner", DummyScanner)
     monkeypatch.setattr(main, "ComponentUpdater", DummyUpdater)
@@ -68,7 +79,7 @@ def test_daemon_loop_runs_component_update_when_enabled(monkeypatch):
 def test_daemon_loop_applies_sdk_request_timeout(monkeypatch):
     timeouts = []
     monkeypatch.setattr(main.request_settings, "set_timeout", timeouts.append)
-    monkeypatch.setattr(main, "DatabaseManager", lambda db_path: object())
+    monkeypatch.setattr(main, "DatabaseManager", lambda db_path: DummyDatabase())
     monkeypatch.setattr(main, "PathManager", lambda root_path, plex_mode: object())
     monkeypatch.setattr(main, "FavScanner", DummyScanner)
     monkeypatch.setattr(main, "ComponentUpdater", DummyUpdater)
@@ -89,7 +100,7 @@ def test_daemon_loop_uses_configured_scan_interval(monkeypatch):
         slept.append(seconds)
         raise asyncio.CancelledError(seconds)
 
-    monkeypatch.setattr(main, "DatabaseManager", lambda db_path: object())
+    monkeypatch.setattr(main, "DatabaseManager", lambda db_path: DummyDatabase())
     monkeypatch.setattr(main, "PathManager", lambda root_path, plex_mode: object())
     monkeypatch.setattr(main, "FavScanner", DummyScanner)
     monkeypatch.setattr(main, "ComponentUpdater", DummyUpdater)
@@ -116,7 +127,7 @@ def test_daemon_loop_continues_after_one_source_fetch_failure(monkeypatch, capsy
         {"id": 1, "name": "First"},
         {"id": 2, "name": "Second"},
     ]
-    monkeypatch.setattr(main, "DatabaseManager", lambda db_path: object())
+    monkeypatch.setattr(main, "DatabaseManager", lambda db_path: DummyDatabase())
     monkeypatch.setattr(main, "PathManager", lambda root_path, plex_mode: object())
     monkeypatch.setattr(main, "FavScanner", PartiallyFailingScanner)
     monkeypatch.setattr(main.asyncio, "sleep", stop_after_first_sleep)
@@ -129,6 +140,67 @@ def test_daemon_loop_continues_after_one_source_fetch_failure(monkeypatch, capsy
     assert "本轮扫描不完整" in output
     assert "收藏夹 First (1)" in output
     assert "本轮全量扫描完毕" not in output
+
+
+def test_daemon_loop_closes_database_when_cancelled(monkeypatch):
+    databases = []
+
+    def create_database(db_path):
+        database = DummyDatabase()
+        databases.append(database)
+        return database
+
+    monkeypatch.setattr(main, "DatabaseManager", create_database)
+    monkeypatch.setattr(main, "PathManager", lambda root_path, plex_mode: object())
+    monkeypatch.setattr(main, "FavScanner", DummyScanner)
+    monkeypatch.setattr(main, "ComponentUpdater", DummyUpdater)
+    monkeypatch.setattr(main.asyncio, "sleep", stop_after_first_sleep)
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(main.daemon_loop(base_config(), cred=object(), uid=1))
+
+    assert len(databases) == 1
+    assert databases[0].closed is True
+
+
+def test_daemon_loop_passes_collection_owner_mid(monkeypatch):
+    calls = []
+
+    class RecordingCollectionScanner(DummyScanner):
+        async def scan_collection(self, collection_id, collection_name, mid):
+            calls.append((collection_id, collection_name, mid))
+
+    config = base_config()
+    config["system"]["check_update_on_start"] = False
+    config["sync_collections"] = [
+        {"id": 88, "mid": 77, "name": "Test collection"}
+    ]
+    monkeypatch.setattr(main, "DatabaseManager", lambda db_path: DummyDatabase())
+    monkeypatch.setattr(main, "PathManager", lambda root_path, plex_mode: object())
+    monkeypatch.setattr(main, "FavScanner", RecordingCollectionScanner)
+    monkeypatch.setattr(main.asyncio, "sleep", stop_after_first_sleep)
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(main.daemon_loop(config, cred=object(), uid=1))
+
+    assert calls == [(88, "Test collection", 77)]
+
+
+def test_daemon_loop_marks_collection_without_mid_incomplete(monkeypatch, capsys):
+    config = base_config()
+    config["system"]["check_update_on_start"] = False
+    config["sync_collections"] = [{"id": 88, "name": "Missing owner"}]
+    monkeypatch.setattr(main, "DatabaseManager", lambda db_path: DummyDatabase())
+    monkeypatch.setattr(main, "PathManager", lambda root_path, plex_mode: object())
+    monkeypatch.setattr(main, "FavScanner", DummyScanner)
+    monkeypatch.setattr(main.asyncio, "sleep", stop_after_first_sleep)
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(main.daemon_loop(config, cred=object(), uid=1))
+
+    output = capsys.readouterr().out
+    assert "缺少有效的 id 或 mid" in output
+    assert "本轮扫描不完整" in output
 
 
 def test_load_config_merges_local_overrides(monkeypatch, tmp_path):

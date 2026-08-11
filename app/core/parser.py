@@ -97,7 +97,8 @@ class BiliParser:
                     {
                         "title": title,
                         "bvid": bvid,
-                        "id": item.get("id", 0),
+                        "id": item.get("id") or item.get("aid") or 0,
+                        "aid": item.get("aid") or item.get("id") or 0,
                         "type": item_type,
                         "up_name": upper.get("name", "Unknown"),
                         "cover": item.get("cover", ""),
@@ -208,11 +209,15 @@ class BiliParser:
                 owner = item.get("owner") or {}
                 if not isinstance(owner, dict):
                     owner = {}
+                aid = item.get("aid") or item.get("id") or 0
                 parsed_list.append(
                     {
-                        "title": item.get("title", "Unknown"),
-                        "bvid": item.get("bvid", ""),
-                        "id": item.get("cid", 0),
+                        "title": item.get("title") or (
+                            "已失效视频" if not item.get("bvid") else "Unknown"
+                        ),
+                        "bvid": item.get("bvid") or "",
+                        "id": aid,
+                        "aid": aid,
                         "type": "video",
                         "up_name": owner.get("name", "Unknown"),
                         "cover": item.get("pic", ""),
@@ -226,8 +231,15 @@ class BiliParser:
 
         return await self._fetch_with_retry(label, fetch)
 
-    async def get_collection_list(self, season_id, page=1):
+    async def get_collection_list(self, season_id, page=1, mid=None):
         """拉取 UP 主合集的内容"""
+        try:
+            normalized_mid = int(mid)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("合集 mid 必须是正整数 UP 主 UID") from exc
+        if normalized_mid <= 0:
+            raise ValueError("合集 mid 必须是正整数 UP 主 UID")
+
         label = f"拉取合集 {season_id} 第 {page} 页"
         print(f"[*] 正在{label}...")
 
@@ -235,13 +247,15 @@ class BiliParser:
             urls = [
                 (
                     "https://api.bilibili.com/x/series/archives"
-                    f"?mid=0&series_id={season_id}&only_normal=true&sort=desc"
+                    f"?mid={normalized_mid}&series_id={season_id}"
+                    "&only_normal=true&sort=desc"
                     f"&pn={page}&ps=30"
                 ),
                 (
                     "https://api.bilibili.com/x/polymer/web-space/"
                     "seasons_archives_list"
-                    f"?mid=1&season_id={season_id}&page_num={page}&page_size=30"
+                    f"?mid={normalized_mid}&season_id={season_id}"
+                    f"&page_num={page}&page_size=30"
                 ),
             ]
             cookies = self.credential.get_cookies() if self.credential else {}
@@ -295,9 +309,12 @@ class BiliParser:
                     owner = {}
                 parsed_list.append(
                     {
-                        "title": arc.get("title", "Unknown"),
-                        "bvid": arc.get("bvid", ""),
-                        "id": arc.get("id", arc.get("aid", 0)),
+                        "title": arc.get("title") or (
+                            "已失效视频" if not arc.get("bvid") else "Unknown"
+                        ),
+                        "bvid": arc.get("bvid") or "",
+                        "id": arc.get("id") or arc.get("aid") or 0,
+                        "aid": arc.get("aid") or arc.get("id") or 0,
                         "type": "video",
                         "up_name": owner.get("name", "Unknown"),
                         "cover": arc.get("pic", ""),
