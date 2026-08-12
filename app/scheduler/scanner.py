@@ -41,8 +41,20 @@ class FavScanner:
         self.path_mgr = path_mgr
         self.cookie_path = config['system']['cookie_path']
         self.global_download_count = 0  # 全局下载计数器
+        self._progress_callback = None
         # 从配置读取最大下载数量，0或None表示无限制（下载全部）
         self.max_global_downloads = config.get('system', {}).get('max_downloads_per_run', 0)
+
+    def set_progress_callback(self, callback):
+        self._progress_callback = callback if callable(callback) else None
+
+    def _report_progress(self, **payload):
+        if self._progress_callback is None:
+            return
+        try:
+            self._progress_callback(**payload)
+        except Exception as exc:
+            print(f"[!] 运行状态上报失败，扫描继续: {exc}")
 
     @staticmethod
     async def _wait_for_next_page():
@@ -164,6 +176,15 @@ class FavScanner:
         """下载一个视频，并保证多P媒体、NFO 与封面使用同一布局。"""
         bvid = str(item.get("bvid") or "").strip()
         title = str(item.get("title") or "Unknown")
+        self._report_progress(
+            status="scanning",
+            phase="asset",
+            source=source_name,
+            current_title=title,
+            current_asset=bvid,
+            downloaded_count=self.global_download_count,
+            message=f"正在处理视频：{title}",
+        )
         video_dir = self.path_mgr.get_video_dir(source_name, title, bvid)
         is_multi, pages = await self.parser.check_multi_p(bvid)
 
@@ -350,6 +371,15 @@ class FavScanner:
                         save_path, p_count = download_result
                         self.db.update_asset(db_key, title, "video", 0, save_path, p_count)
                         self.global_download_count += 1  # 【全局限制】计数
+                        self._report_progress(
+                            status="scanning",
+                            phase="asset_complete",
+                            source=fav_name,
+                            current_title=title,
+                            current_asset=db_key,
+                            downloaded_count=self.global_download_count,
+                            message=f"已归档视频：{title}",
+                        )
                         
                         # 检查是否达到全局限制（0或None表示无限制）
                         if self.max_global_downloads and self.global_download_count >= self.max_global_downloads:
@@ -368,6 +398,15 @@ class FavScanner:
                         
                     print(f"[*] 发现新专栏图文，准备抓取: {title} ({article_key})")
                     save_path = self.path_mgr.get_article_dir(fav_name, title, cv_id)
+                    self._report_progress(
+                        status="scanning",
+                        phase="asset",
+                        source=fav_name,
+                        current_title=title,
+                        current_asset=article_key,
+                        downloaded_count=self.global_download_count,
+                        message=f"正在处理专栏：{title}",
+                    )
 
                     # 调用专栏转 Markdown 引擎
                     success = MetadataGenerator.process_article_to_md(item, save_path)
@@ -384,6 +423,15 @@ class FavScanner:
                             continue
                         self.db.update_asset(article_key, title, "article", 0, save_path)
                         self.global_download_count += 1
+                        self._report_progress(
+                            status="scanning",
+                            phase="asset_complete",
+                            source=fav_name,
+                            current_title=title,
+                            current_asset=article_key,
+                            downloaded_count=self.global_download_count,
+                            message=f"已归档专栏：{title}",
+                        )
 
                         # 检查是否达到全局限制（0或None表示无限制）
                         if self.max_global_downloads and self.global_download_count >= self.max_global_downloads:
@@ -452,6 +500,15 @@ class FavScanner:
                 save_path, p_count = download_result
                 self.db.update_asset(db_key, title, "video", 0, save_path, p_count)
                 self.global_download_count += 1
+                self._report_progress(
+                    status="scanning",
+                    phase="asset_complete",
+                    source="稍后再看",
+                    current_title=title,
+                    current_asset=db_key,
+                    downloaded_count=self.global_download_count,
+                    message=f"已归档视频：{title}",
+                )
                 
                 if self.max_global_downloads and self.global_download_count >= self.max_global_downloads:
                     print(f"\n[✓] 【全局限制】已成功下载 {self.max_global_downloads} 个视频，测试完成！")
@@ -522,6 +579,15 @@ class FavScanner:
                     save_path, p_count = download_result
                     self.db.update_asset(db_key, title, "video", 0, save_path, p_count)
                     self.global_download_count += 1
+                    self._report_progress(
+                        status="scanning",
+                        phase="asset_complete",
+                        source=collection_name,
+                        current_title=title,
+                        current_asset=db_key,
+                        downloaded_count=self.global_download_count,
+                        message=f"已归档视频：{title}",
+                    )
                     
                     if self.max_global_downloads and self.global_download_count >= self.max_global_downloads:
                         print(f"\n[✓] 【全局限制】已成功下载 {self.max_global_downloads} 个资源，本轮结束！")

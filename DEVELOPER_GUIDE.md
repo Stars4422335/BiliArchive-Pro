@@ -8,6 +8,8 @@
 - 根目录的 `本地任务计划与执行表.md` 仅用于本地执行记录，禁止使用 `git add -f` 强制提交。
 - 组件策略只允许 `auto`、`notify`、`off`；自动更新的可执行文件必须先通过官方 SHA256 校验，下载流程不得自行安装组件。
 - `sync_collections` 的每个条目必须同时提供合集 `id` 和所属 UP 主 UID `mid`。
+- WebUI 只能写入 `app/webui/service.py` 中声明的公开白名单；不得暴露或修改下载路径、数据库路径、Cookie 路径和代理地址。
+- WebUI 设置写入本地覆盖后不会热重载正在运行的扫描器，必须明确提示重启核心进程生效。
 
 ## 核心逻辑
 
@@ -21,6 +23,8 @@
 8. **弹幕隔离**：下载器只转换当前文件名前缀下的 `.danmaku.xml`；转换器按类型分区和分配轨道，容量不足时丢弃冲突项。
 9. **完成状态**：视频、专栏或墓碑的关键 NFO 以及视频标准封面写入失败时不得写入数据库完成状态，下轮扫描会继续处理。
 10. **路径预算**：收藏夹与资产目录使用稳定截断，媒体文件名根据完整输出路径动态收缩；预算不足以保留唯一标识时明确拒绝。
+11. **WebUI 解耦**：核心进程只原子发布 `runtime.json`；WebAPI 使用 SQLite `mode=ro` 短连接读取资产，不创建、迁移或写入数据库。
+12. **WebUI 安全**：默认只监听 loopback；非 loopback 必须启用 Bearer Token。配置更新需要 revision，并保留本地覆盖文件中的非公开字段。
 
 ## 媒体库布局
 
@@ -33,6 +37,9 @@
 
 - `app/core/`：下载、解析、元数据、路径、数据库和敏感文件写入工具。
 - `app/scheduler/`：收藏夹扫描和组件环境检查。
+- `app/webui/`：只读资产服务、配置白名单与 FastAPI 应用工厂。
+- `webui/`：React/Vite 管理面板源码；`dist/` 和 `node_modules/` 只在本地生成，不提交。
+- `web.py`：生产 WebUI 启动入口；默认地址为 `127.0.0.1:8000`。
 - `tests/`：不访问真实 Bilibili 账号的单元与边界测试。
 - `.github/workflows/ci.yml`：Windows/Linux 测试、编译检查和 Docker 构建验证。
 
@@ -42,14 +49,22 @@ Windows PowerShell：
 
 ```powershell
 .\venv\Scripts\python.exe -m pytest tests -q
-.\venv\Scripts\python.exe -m compileall -q main.py login.py app
+.\venv\Scripts\python.exe -m compileall -q main.py login.py web.py app
+Set-Location webui
+npm.cmd ci
+npm.cmd run lint
+npm.cmd run build
 ```
 
 Linux、macOS 或 WSL：
 
 ```bash
 python -m pytest tests -q
-python -m compileall -q main.py login.py app
+python -m compileall -q main.py login.py web.py app
+cd webui
+npm ci
+npm run lint
+npm run build
 ```
 
 涉及 Dockerfile 或依赖变更时，还必须执行：
@@ -66,7 +81,7 @@ docker build --build-arg DEBIAN_MIRROR=https://mirrors.aliyun.com -t biliarchive
 
 ## 发布流程
 
-1. 将 `app/__init__.py`、Dockerfile 镜像标签、README 徽章与最新改进、`CHANGELOG.md` 更新为同一版本号。
+1. 将 `app/__init__.py`、`webui/package.json`、Dockerfile 镜像标签、README 徽章与最新改进、`CHANGELOG.md` 更新为同一版本号。
 2. 确认测试、编译检查和 Docker 构建全部通过。
 3. 使用 `git status --short` 确认没有凭据、数据库、本地配置或任务记录进入变更。
 4. 提交并标记版本后，只用 Git 受跟踪内容生成 ZIP：

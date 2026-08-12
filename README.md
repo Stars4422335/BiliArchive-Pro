@@ -20,6 +20,7 @@
   - **墓碑机制 (Tombstone)**：扫描到收藏夹中已被 B 站删除的失效视频时，在本地生成 NFO 占位符，记录遗失的元数据。
   - **孤本保护**：如果本地已下载好的视频后来被源端删除，本地资产会自动打标锁定（如添加 `[源端已删]` 前缀），绝不发生误覆盖或同步删除。
 - ⚡ **周期巡检与防风控**：按配置周期全量巡检收藏夹，通过本地数据库跳过已归档资源并更新存活时间；翻页和下载后加入休眠，降低请求频率。
+- 🖥️ **本地 WebUI 管理面板**：独立进程展示扫描状态、磁盘空间和真实资产封面，支持跨页搜索、筛选及白名单配置编辑；不会远程删除资产或直接控制下载。
 - 💬 **弹幕智能渲染**：把当前媒体的 B 站 XML 弹幕转换为 `.ass`，分别调度滚动、顶部和底部轨道，过载时丢弃冲突项以避免文字重叠。
 - 🔄 **可选组件检查**：可按 `auto` / `notify` / `off` 策略检查 `yt-dlp`；自动更新前必须通过 GitHub 官方 SHA256 校验，同时验证系统或配置路径中的 FFmpeg 是否可用。
 
@@ -66,13 +67,31 @@ python login.py
 ```
 *请使用 Bilibili 手机 App 扫描控制台出现的二维码。登录成功后，会在 `data/` 目录下生成 `cookie.json`。*
 
-**3. 一键启动容器**
+**3. 启动核心容器**
 ```bash
-docker-compose up -d
+docker compose up -d biliarchive
 ```
-启动后，容器会自动接管所有后台下载任务。你可以通过 `docker-compose logs -f` 查看实时运行日志。
+启动后，容器会自动接管所有后台下载任务。你可以通过 `docker compose logs -f biliarchive` 查看实时运行日志。
 
-> **持久化说明**：Docker 会将 `data/` (数据库与凭证)、`downloads/` (视频与专栏库)、`bin/` (组件工具) 以及 `config.yaml` 映射到宿主机的项目目录下，便于迁移备份。
+**4. 可选：启动 WebUI**
+
+WebUI 在 Docker 中使用独立服务，并强制要求 Bearer Token。下面的端口只绑定宿主机 `127.0.0.1`：
+
+```bash
+export BILIARCHIVE_WEB_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+docker compose --profile webui up -d
+```
+
+PowerShell 可使用：
+
+```powershell
+$env:BILIARCHIVE_WEB_TOKEN = python -c "import secrets; print(secrets.token_urlsafe(32))"
+docker compose --profile webui up -d
+```
+
+打开 `http://127.0.0.1:8000` 并输入刚生成的 Token。若需要从其他电脑访问，优先使用 SSH 隧道或带 TLS 的反向代理，不要直接把未加密端口暴露到公网。
+
+> **持久化说明**：Docker 会将 `data/`（数据库、凭证、运行状态和 `config.local.yaml`）、`downloads/`（视频与专栏库）、`bin/`（组件工具）映射到宿主机；`config.yaml` 只读挂载。WebUI 保存设置后需要重启 `biliarchive` 核心服务才会生效。
 
 ---
 
@@ -127,7 +146,7 @@ favorites:
 - 收藏夹目录和媒体文件名会按完整路径预算截断；若 `download_path` 过长到无法保留唯一标识，程序会明确报错，避免名称碰撞。
 - 本设置只影响新下载或重新下载的资产，不会自动移动已经归档的旧目录。
 
-> `config.local.yaml` 只用于本地覆盖，不应放入发布包。Docker 部署应通过挂载 `config.yaml` 或其他部署侧配置管理方式提供运行配置。
+> `config.local.yaml` 只用于本地覆盖，不应放入发布包。Docker Compose 将本地覆盖写入 `data/config.local.yaml`，镜像内路径为 `/app/data/config.local.yaml`。
 
 ---
 
@@ -149,18 +168,40 @@ python main.py --cli
 ```
 系统会自动拉取所有的收藏夹并开始下载，本轮任务结束后会进入休眠状态（默认 21600 秒后再次扫描，可通过 `config.yaml` 的 `system.scan_interval_seconds` 调整），适合搭配 `tmux`、`screen` 或 `systemd` 长期挂机。
 
-### 3. 测试与限制下载数量
+### 3. 启动 WebUI
+
+首次从源码使用 WebUI 需要 Node.js 20+ 构建前端；之后由 FastAPI 同源提供静态页面和 API：
+
+```bash
+cd webui
+npm ci
+npm run build
+cd ..
+python web.py
+```
+
+默认只监听 `127.0.0.1:8000`。若显式监听非 loopback 地址，必须通过环境变量提供 Token：
+
+```bash
+export BILIARCHIVE_WEB_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+python web.py --host 0.0.0.0 --port 8000
+```
+
+WebAPI 使用 SQLite `mode=ro` 浏览资产，不创建或迁移数据库。设置页只允许修改公开白名单字段，并原子写入本地覆盖配置；路径、Cookie 和代理地址不会通过 WebUI 暴露或修改。保存后重启核心进程以应用新配置。
+
+### 4. 测试与限制下载数量
 如果你只是想测试一下环境是否跑通，可以使用 `--limit` 参数限制本次运行最大下载数（到达指定数量后程序会自动安全退出）：
 ```bash
 python main.py --cli --limit 3
 ```
 
-### 4. 开发测试
+### 5. 开发测试
 如果你要参与开发或验证改动，可以安装开发依赖并运行测试：
 ```bash
 pip install -r requirements-dev.txt
 python -m pytest tests
-python -m compileall main.py login.py app
+python -m compileall main.py login.py web.py app
+cd webui && npm ci && npm run lint && npm run build
 ```
 
 ---
@@ -168,6 +209,8 @@ python -m compileall main.py login.py app
 ## 🧾 最新改进（v1.3.0）
 
 完整版本说明见 [CHANGELOG.md](CHANGELOG.md)。
+
+`[Unreleased]` 已加入独立 WebUI 管理进程、只读资产 API、运行状态文件、白名单设置编辑、Bearer Token 安全边界和 Docker WebUI profile。
 
 - 多 P 视频按独立页面下载；Plex 模式生成 `Season 01/S01E##`、`tvshow.nfo`、分集 NFO 和标准封面，平铺模式使用稳定 `P##` 命名。
 - Active 记录按 `p_count` 与稳定分 P 标识复核，缺集自动续跑；关键 NFO 或标准封面失败时不写入数据库完成状态。
@@ -219,12 +262,12 @@ python -m compileall main.py login.py app
 - [x] **周期全量巡检**：自动记忆已归档资产，扫描时跳过重复下载并更新 `last_check`，默认每 6 小时重新巡检。
 - [x] **组件环境检查**：按策略检查 `yt-dlp`，自动更新前验证官方 SHA256；FFmpeg 只检查系统 PATH 或配置路径，不自动下载更新。
 - [x] **Docker 容器化**：提供包含 FFmpeg 与 Python 运行环境的镜像及 `docker-compose.yml` 部署方案。
+- [x] **WebUI 管理面板**：提供概览、资产浏览和白名单设置页面；数据库只读，远程监听必须配置 Token。
 - [x] **智能路径管理**：跨平台安全的路径名非法字符过滤与防爆长路径自动截断机制。
 
 ### 🟡 扩展功能 (规划中/开发中)
 - [ ] **全量同步关注UP主**：新增配置字段，支持全量同步账号中已关注UP主的全部视频与图文。
 - [ ] **跨平台打包**：使用 PyInstaller 打包生成 Windows/Mac/Linux 独立可执行文件（免配 Python 环境）。
-- [ ] **WebUI 管理面板**：提供现代化的可视化网页端，用于查看下载进度、管理数据库资产、修改配置。
 - [ ] **播放列表同步**：支持同步“稍后再看”列表及历史观看记录。
 - [ ] **AI 内容摘要**：接入大模型，在下载完成后自动分析视频/专栏内容，并在 NFO 中追加 AI 内容摘要。
 - [ ] **弹幕词云图**：基于下载的弹幕文件，自动生成并保存弹幕词云图作为媒体库的海报/背景图。

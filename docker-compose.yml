@@ -7,6 +7,24 @@ services:
       - ./data:/app/data
       - ./downloads:/app/downloads
       - ./bin:/app/bin
-      - ./config.yaml:/app/config.yaml
+      - ./config.yaml:/app/config.yaml:ro
     environment:
       - TZ=Asia/Shanghai
+      - BILIARCHIVE_LOCAL_CONFIG_PATH=/app/data/config.local.yaml
+
+  biliarchive-web:
+    build: .
+    container_name: biliarchive-pro-web
+    profiles: ["webui"]
+    restart: "no"
+    command: ["python", "web.py", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "127.0.0.1:${BILIARCHIVE_WEB_PORT:-8000}:8000"
+    volumes:
+      - ./data:/app/data
+      - ./downloads:/app/downloads:ro
+      - ./config.yaml:/app/config.yaml:ro
+    environment:
+      - TZ=Asia/Shanghai
+      - BILIARCHIVE_LOCAL_CONFIG_PATH=/app/data/config.local.yaml
+      - BILIARCHIVE_WEB_TOKEN=${BILIARCHIVE_WEB_TOKEN:-}

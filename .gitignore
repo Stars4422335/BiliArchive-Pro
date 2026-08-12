@@ -32,10 +32,16 @@ venv/
 .venv/
 env/
 
-# 6. 系统生成文件
+# 6. WebUI 本地依赖、构建结果与浏览器验收产物
+/webui/node_modules/
+/webui/dist/
+/.playwright-cli/
+/output/playwright/
+
+# 7. 系统生成文件
 .DS_Store
 Thumbs.db
 
-# 7. 仅本地任务记录（禁止提交和发布）
+# 8. 仅本地任务记录（禁止提交和发布）
 /本地任务计划与执行表.md
 /BiliArchive-Pro-v*.zip

@@ -4,6 +4,20 @@
 
 ## [Unreleased]
 
+### WebUI 管理面板
+
+- 新增 React/Vite 管理面板，包含扫描概览、资产表和设置页，支持真实 `poster.jpg`、服务端搜索、状态/类型筛选、分页和移动端布局。
+- 核心守护进程原子发布 `runtime.json`；WebAPI 独立读取运行状态，WebUI 与扫描/下载生命周期解耦。
+- 资产 API 使用 SQLite `mode=ro` 和短连接查询，不创建、迁移或修改数据库；本阶段不提供远程删除资产或直接控制下载。
+- 设置 API 仅接受公开白名单字段，使用 revision 检测并发修改，原子更新本地覆盖文件且保留其中已有的私有字段。
+
+### 安全与部署
+
+- 新增 `web.py` FastAPI/Uvicorn 启动入口，默认监听 `127.0.0.1`；监听非 loopback 地址时必须设置 `BILIARCHIVE_WEB_TOKEN`。
+- Token 仅通过 Authorization Bearer 头发送并保存在浏览器 `sessionStorage`；封面也通过鉴权 fetch 加载，不把 Token 写入 URL。
+- Dockerfile 增加 Node 构建阶段，仅把前端 `dist` 复制到最终 Python 镜像；Compose 通过可选 `webui` profile 启动独立 Web 服务。
+- Docker 中公共配置只读挂载，本地覆盖写入共享的 `/app/data/config.local.yaml`；WebUI 保存后需重启核心服务生效。
+
 ## [1.3.0] - 2026-08-11
 
 ### 媒体库输出

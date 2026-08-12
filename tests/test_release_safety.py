@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from app import __version__
@@ -19,7 +20,13 @@ def test_local_state_is_excluded_from_git_and_docker():
     git_patterns = _patterns(PROJECT_ROOT / ".gitignore")
     docker_patterns = _patterns(PROJECT_ROOT / ".dockerignore")
 
-    assert {"config.local.yaml", f"/{LOCAL_PLAN}", "/BiliArchive-Pro-v*.zip"} <= git_patterns
+    assert {
+        "config.local.yaml",
+        f"/{LOCAL_PLAN}",
+        "/BiliArchive-Pro-v*.zip",
+        "/.playwright-cli/",
+        "/output/playwright/",
+    } <= git_patterns
     assert {
         ".env",
         "config.local.yaml",
@@ -30,6 +37,8 @@ def test_local_state_is_excluded_from_git_and_docker():
         "venv",
         LOCAL_PLAN,
         "BiliArchive-Pro-v*.zip",
+        ".playwright-cli",
+        "output/playwright",
     } <= docker_patterns
 
 
@@ -38,17 +47,23 @@ def test_dockerfile_uses_explicit_runtime_copy_list():
 
     assert "COPY . ." not in dockerfile
     assert "COPY app ./app" in dockerfile
+    assert "COPY main.py login.py web.py config.yaml LICENSE README.md ./" in dockerfile
+    assert "COPY --from=webui-builder /webui/dist ./webui/dist" in dockerfile
     assert "config.local.yaml" not in dockerfile
     assert LOCAL_PLAN not in dockerfile
 
 
-def test_release_metadata_is_1_2_0():
+def test_release_metadata_is_1_3_0():
     expected_version = "1.3.0"
     dockerfile = (PROJECT_ROOT / "Dockerfile").read_text(encoding="utf-8")
     readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
     changelog = (PROJECT_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    web_package = json.loads(
+        (PROJECT_ROOT / "webui" / "package.json").read_text(encoding="utf-8")
+    )
 
     assert __version__ == expected_version
+    assert web_package["version"] == expected_version
     assert f'org.opencontainers.image.version="{expected_version}"' in dockerfile
     assert f"BILIARCHIVE_VERSION={expected_version}" in dockerfile
     assert f"Release: v{expected_version}" in readme

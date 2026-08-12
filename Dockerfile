@@ -1,3 +1,11 @@
+FROM node:22-bookworm-slim AS webui-builder
+
+WORKDIR /webui
+COPY webui/package.json webui/package-lock.json ./
+RUN npm ci
+COPY webui/ ./
+RUN npm run build
+
 FROM python:3.11-slim
 
 ARG DEBIAN_MIRROR=https://deb.debian.org
@@ -30,7 +38,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy only runtime files. Local credentials and planning files can never enter the image.
 COPY app ./app
-COPY main.py login.py config.yaml LICENSE README.md ./
+COPY main.py login.py web.py config.yaml LICENSE README.md ./
+COPY --from=webui-builder /webui/dist ./webui/dist
 RUN mkdir -p /app/data /app/downloads /app/bin
 
 VOLUME ["/app/data", "/app/downloads", "/app/bin"]

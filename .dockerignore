@@ -23,6 +23,10 @@ __pycache__
 **/.pytest_cache
 .coverage
 htmlcov
+webui/node_modules
+webui/dist
+.playwright-cli
+output/playwright
 
 # Development and release-only files
 tests
