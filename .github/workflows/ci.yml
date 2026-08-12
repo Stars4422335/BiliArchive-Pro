@@ -38,7 +38,35 @@ jobs:
         run: python -m pytest tests -q
 
       - name: Compile Python sources
-        run: python -m compileall -q main.py login.py app
+        run: python -m compileall -q main.py login.py web.py app
+
+  webui:
+    name: WebUI / Node 22
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: webui/package-lock.json
+
+      - name: Install WebUI dependencies
+        working-directory: webui
+        run: npm ci
+
+      - name: Lint WebUI
+        working-directory: webui
+        run: npm run lint
+
+      - name: Build WebUI
+        working-directory: webui
+        run: npm run build
 
   docker:
     name: Docker image

@@ -1,6 +1,6 @@
 # 📺 BiliArchive-Pro
 
-> **专业的 Bilibili 个人数字资产全量备份系统**
+> **带本地 WebUI 的 Bilibili 个人数字资产备份、同步与媒体库整理工具**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Release: v1.3.0](https://img.shields.io/badge/release-v1.3.0-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.3.0)
@@ -210,7 +210,10 @@ cd webui && npm ci && npm run lint && npm run build
 
 完整版本说明见 [CHANGELOG.md](CHANGELOG.md)。
 
-`[Unreleased]` 已加入独立 WebUI 管理进程、只读资产 API、运行状态文件、白名单设置编辑、Bearer Token 安全边界和 Docker WebUI profile。
+- 新增独立 WebUI 管理进程，提供扫描概览、磁盘状态、真实封面、资产搜索/筛选/分页和响应式设置页。
+- WebAPI 使用 SQLite `mode=ro` 浏览媒体库；设置接口只允许公开白名单字段，并通过 revision 检测并发修改。
+- WebUI 默认仅监听 `127.0.0.1`；远程监听必须配置 Bearer Token，Token 仅保存在浏览器当前会话中。
+- Docker 镜像使用 Node 多阶段构建，仅携带前端 `dist`；Compose 可通过 `webui` profile 启动独立管理服务。
 
 - 多 P 视频按独立页面下载；Plex 模式生成 `Season 01/S01E##`、`tvshow.nfo`、分集 NFO 和标准封面，平铺模式使用稳定 `P##` 命名。
 - Active 记录按 `p_count` 与稳定分 P 标识复核，缺集自动续跑；关键 NFO 或标准封面失败时不写入数据库完成状态。

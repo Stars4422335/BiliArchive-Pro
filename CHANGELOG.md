@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-08-12
+
 ### WebUI 管理面板
 
 - 新增 React/Vite 管理面板，包含扫描概览、资产表和设置页，支持真实 `poster.jpg`、服务端搜索、状态/类型筛选、分页和移动端布局。
@@ -17,8 +19,6 @@
 - Token 仅通过 Authorization Bearer 头发送并保存在浏览器 `sessionStorage`；封面也通过鉴权 fetch 加载，不把 Token 写入 URL。
 - Dockerfile 增加 Node 构建阶段，仅把前端 `dist` 复制到最终 Python 镜像；Compose 通过可选 `webui` profile 启动独立 Web 服务。
 - Docker 中公共配置只读挂载，本地覆盖写入共享的 `/app/data/config.local.yaml`；WebUI 保存后需重启核心服务生效。
-
-## [1.3.0] - 2026-08-11
 
 ### 媒体库输出
 

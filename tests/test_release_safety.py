@@ -68,4 +68,4 @@ def test_release_metadata_is_1_3_0():
     assert f"BILIARCHIVE_VERSION={expected_version}" in dockerfile
     assert f"Release: v{expected_version}" in readme
     assert f"最新改进（v{expected_version}）" in readme
-    assert f"## [{expected_version}] - 2026-08-11" in changelog
+    assert f"## [{expected_version}] - 2026-08-12" in changelog
