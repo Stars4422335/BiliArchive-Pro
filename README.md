@@ -3,7 +3,7 @@
 > **带本地 WebUI 的 Bilibili 个人数字资产备份、同步与媒体库整理工具**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Release: v1.3.0](https://img.shields.io/badge/release-v1.3.0-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.3.0)
+[![Release: v1.4.0](https://img.shields.io/badge/release-v1.4.0-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.4.0)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 
 **BiliArchive-Pro** 旨在为 B 站深度用户提供一套稳定、安全且符合影视库管理规范（如 Plex、Jellyfin、Emby）的本地自动化备份方案。它不仅是一个支持最高 4K/HDR 画质的下载器，更是一个智能的**个人数字图书馆管理员**。
@@ -15,6 +15,7 @@
 ## ✨ 核心特性
 
 - 🚀 **全能媒体抓取**：不仅仅是视频！支持最高画质视频下载（含多 P 分集），同时**独家支持专栏图文**抓取（自动转为 Markdown 并将图片本地化保存）。
+- 👥 **关注 UP 主全量同步**：`followings.mode` 一键全量同步账号已关注的全部 UP 主投稿，或用 `list` 模式按 UID 监控任意 UP 主；取关后本地已备份资产保留不动，失效投稿自动走墓碑/孤本保护。
 - 🎬 **媒体库侧车输出 (Plex/Jellyfin/Emby)**：媒体与 `.nfo` 一一同名，整理标准封面；多 P 可按 `Season 01/S01E##` 组织，并将 UP 主写入演职员信息。
 - 🛡️ **首创数字资产保护逻辑**：
   - **墓碑机制 (Tombstone)**：扫描到收藏夹中已被 B 站删除的失效视频时，在本地生成 NFO 占位符，记录遗失的元数据。
@@ -267,10 +268,10 @@ cd webui && npm ci && npm run lint && npm run build
 - [x] **Docker 容器化**：提供包含 FFmpeg 与 Python 运行环境的镜像及 `docker-compose.yml` 部署方案。
 - [x] **WebUI 管理面板**：提供概览、资产浏览和白名单设置页面；数据库只读，远程监听必须配置 Token。
 - [x] **智能路径管理**：跨平台安全的路径名非法字符过滤与防爆长路径自动截断机制。
+- [x] **全量同步关注UP主**：`followings.mode` 支持 `all`（全部关注）/ `list`（指定 UID），失效投稿自动进入墓碑与孤本保护；取关后本地资产保留。
+- [x] **跨平台打包**：提供 PyInstaller 打包配置 `build.spec`（核心引擎单目录分发，Windows 实测通过）。
 
 ### 🟡 扩展功能 (规划中/开发中)
-- [ ] **全量同步关注UP主**：新增配置字段，支持全量同步账号中已关注UP主的全部视频与图文。
-- [ ] **跨平台打包**：使用 PyInstaller 打包生成 Windows/Mac/Linux 独立可执行文件（免配 Python 环境）。
 - [ ] **播放列表同步**：支持同步“稍后再看”列表及历史观看记录。
 - [ ] **AI 内容摘要**：接入大模型，在下载完成后自动分析视频/专栏内容，并在 NFO 中追加 AI 内容摘要。
 - [ ] **弹幕词云图**：基于下载的弹幕文件，自动生成并保存弹幕词云图作为媒体库的海报/背景图。
