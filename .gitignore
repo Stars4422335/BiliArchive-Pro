@@ -38,6 +38,10 @@ env/
 /.playwright-cli/
 /output/playwright/
 
+# 6.1 PyInstaller 打包工作目录与产物
+/build/
+/dist/
+
 # 7. 系统生成文件
 .DS_Store
 Thumbs.db
@@ -45,3 +49,9 @@ Thumbs.db
 # 8. 仅本地任务记录（禁止提交和发布）
 /本地任务计划与执行表.md
 /BiliArchive-Pro-v*.zip
+
+# 9. 本地安全扫描台账与临时文件（mimosa 插件产物，禁止提交）
+/.mimosa/
+/ledger_batch_tmp.json
+/try_batch.json
+/try_fid.json

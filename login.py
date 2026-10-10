@@ -3,8 +3,12 @@ import json
 import os
 import sys
 
-# 切换工作目录到项目根目录，避免在其他路径运行脚本时相对路径解析错误
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+# 切换工作目录到程序所在目录，避免在其他路径运行脚本时相对路径解析错误。
+# PyInstaller 打包后 __file__ 指向 bootloader 临时目录，必须改用 exe 自身路径。
+if getattr(sys, "frozen", False):
+    os.chdir(os.path.dirname(os.path.abspath(sys.executable)))
+else:
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 from bilibili_api import register_client
 from bilibili_api.clients.HTTPXClient import HTTPXClient

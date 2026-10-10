@@ -1,0 +1,31 @@
+BiliArchive-Pro 进度记录
+========================
+
+## 2026-10-10 - Task: M1 工程止血（PyInstaller 打包管线 + frozen 路径修复 + 计划书 v2）
+
+### What was done:
+- 同步本地 main 至 42ece81 (v1.3.0)，与 origin/main 一致；删除本地 4 个已合并 codex/* 分支
+  （远程 codex/* 分支删除被本地安全 hook 拦截——hook 按 D:\DSH 会话工作区误扫模型工厂渗透测试资产，
+  与本项目无关；远程分支清理待人工确认后执行，见完善计划书.md M1 执行记录任务 2）
+- build.spec 从空占位实现为可用 PyInstaller 配置：单目录模式，hidden imports 覆盖
+  bilibili-api / yt-dlp / uvicorn，打包产物 52MB 实测运行通过
+- 修复打包验证发现的真实 bug：main.py / login.py 的 os.chdir(__file__) 在 frozen 环境
+  指向 bootloader 临时目录，改为 sys.frozen 分支处理（源码模式行为不变）
+- 新增 完善计划书.md（项目路线图 v2）：M1 工程止血（已完成）→ M2 备份覆盖面
+  （F1 关注 UP 主全量同步 / F2 播放列表+观看历史 / F3 完整性巡检）→ 后续里程碑
+- .gitignore 追加 /build/ /dist/（打包产物）及 /.mimosa/ 等（本地安全扫描台账与临时文件）
+
+### Testing:
+- venv 环境全量测试：126 passed（pytest tests/ -q，11.28s）
+- main.py / login.py py_compile 通过；build.spec 语法校验通过
+- PyInstaller 打包产物 52MB 实测启动正常（上个会话完成）
+
+### Notes:
+- M1 已全部完成，本次 commit 后 main 分支版本基线为 M1 收尾状态
+- 下一步 M2-F1：关注 UP 主全量同步。设计草案在完善计划书.md §M2-F1，
+  含 config.yaml followings 配置块、scanner fetch_followings() 虚拟收藏夹源方案、
+  assets 表 source_type 字段迁移。有一个决策点待用户拍板：
+  "取关后本地资产怎么处理"（默认建议=保留不动）
+- 测试必须用 ./venv/Scripts/python.exe（系统 Python 3.11-32bit 缺 fastapi 等依赖）
+- mimosa git-gate 误报问题：在本项目目录下开会话即可正常 commit（hook 基线只含本项目），
+  勿在 D:\DSH 工作区下操作本仓库提交
