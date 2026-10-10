@@ -4,6 +4,32 @@
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-10
+
+### 观看历史元数据同步
+
+- 新增 `system.sync_watch_history` 开关（默认 `off`）：开启后把看过的视频**仅以元数据**（bvid、标题、UP 主、观看时间）记入本地 `watch_history` 表，不下载任何视频本体。
+- 新增 `system.max_history_days`（默认 `90`）回溯窗口：历史按观看时间倒序翻页，触及窗口边界或已记录的最早条目即停止；首轮拉取窗口内的量，之后每轮只追增量。
+- 无 `bvid` 的历史条目（直播、课程等）自动跳过。
+
+### 完整性巡检
+
+- 新增 `system.verify_integrity` 三档配置：`off`（默认，不校验）/ `light`（文件非空 + 媒体容器签名，纯字节读取）/ `full`（追加 `ffmpeg` 前 5 秒快速解码探测，需要 FFmpeg）。
+- 每轮扫描抽样最多 20 个已完成资产：从未校验的优先，之后最久未校验优先；大库摊薄到多轮完成。
+- 校验结论写入 `assets` 表新列 `integrity_status`（0 未校验 / 1 通过 / 2 损坏）与 `last_verify`，旧数据库打开时自动迁移，WebUI 资产页自动展示。
+- **只标记，不删除**：损坏文件（含孤本）永久保留并标记"完整性异常"，是否重新下载由用户决定。
+
+### 其他
+
+- 播放列表同步与既有 `sync_collections` 合集同步收敛：两者使用同一 B 站 seasons/series API，不再提供重复入口。
+- README 配置指南新增"功能开关与档位说明"与 PyInstaller 打包使用说明，面向新用户交付。
+
+### 升级说明
+
+- 三个新配置默认值均为关闭状态（`sync_watch_history: false`、`verify_integrity: "off"`），升级后行为不变，按需开启。
+- 旧数据库首次启动时自动补列（`integrity_status`、`last_verify`），无需手工迁移。
+- `verify_integrity: "full"` 依赖 FFmpeg；未安装时该项校验报错标记，不会中断扫描。
+
 ## [1.4.0] - 2026-10-10
 
 ### 关注 UP 主同步

@@ -53,8 +53,8 @@ def test_dockerfile_uses_explicit_runtime_copy_list():
     assert LOCAL_PLAN not in dockerfile
 
 
-def test_release_metadata_is_1_4_0():
-    expected_version = "1.4.0"
+def test_release_metadata_is_1_5_0():
+    expected_version = "1.5.0"
     dockerfile = (PROJECT_ROOT / "Dockerfile").read_text(encoding="utf-8")
     readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
     changelog = (PROJECT_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")

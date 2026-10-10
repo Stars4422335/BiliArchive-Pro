@@ -3,7 +3,7 @@
 > **带本地 WebUI 的 Bilibili 个人数字资产备份、同步与媒体库整理工具**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Release: v1.4.0](https://img.shields.io/badge/release-v1.4.0-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.4.0)
+[![Release: v1.5.0](https://img.shields.io/badge/release-v1.5.0-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.5.0)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 
 **BiliArchive-Pro** 旨在为 B 站深度用户提供一套稳定、安全且符合影视库管理规范（如 Plex、Jellyfin、Emby）的本地自动化备份方案。它不仅是一个支持最高 4K/HDR 画质的下载器，更是一个智能的**个人数字图书馆管理员**。
@@ -107,6 +107,10 @@ system:
   check_update_on_start: false       # 是否在启动时执行组件检查策略
   max_downloads_per_run: 0           # 0代表无限制。若只想测试，可改为 5
   download_timeout_seconds: 7200     # 单个 yt-dlp 任务超时；0 表示不限制
+  sync_watch_later: false            # 是否自动备份“稍后再看”列表
+  sync_watch_history: false          # 同步观看历史（仅记元数据，不下载视频本体）
+  max_history_days: 90               # 观看历史回溯窗口（天）；0 表示不限，历史量大时慎用
+  verify_integrity: "off"            # 完整性巡检档位：off / light / full（见下文说明）
 
 network:
   sync_retry_attempts: 3            # 同步列表读取最大尝试次数
@@ -123,6 +127,19 @@ sync_collections:
   # - id: 67890
   #   mid: 12345
   #   name: "某个UP主的精华合集"
+
+followings:
+  # 关注 UP 主投稿同步。取关 UP 主后，本地已备份的资产默认保留不动。
+  # mode:
+  #   off  = 关闭（默认）
+  #   all  = 全量同步登录账号的全部关注 UP 主
+  #          ⚠️ 首轮拉取量大，强烈建议配合 max_downloads_per_run 小流量试跑
+  #   list = 只同步下方 list 中显式列出的 UID（无需关注关系，可用于监控任意 UP 主）
+  mode: "off"
+  list:
+    # - mid: 946974
+    #   name: "某UP主"        # name 可省略，省略时自动向 B 站查询
+    # - mid: 12345678
 
 favorites:
   # 留空此项将【自动拉取并备份您账号下的所有收藏夹】！
@@ -148,6 +165,41 @@ favorites:
 - 本设置只影响新下载或重新下载的资产，不会自动移动已经归档的旧目录。
 
 > `config.local.yaml` 只用于本地覆盖，不应放入发布包。Docker Compose 将本地覆盖写入 `data/config.local.yaml`，镜像内路径为 `/app/data/config.local.yaml`。
+
+### 🔖 功能开关与档位说明
+
+**关注 UP 主同步（`followings.mode`）**
+
+| 档位 | 行为 | 适用场景 |
+|---|---|---|
+| `off` | 关闭（默认） | 只用收藏夹/合集等其它来源 |
+| `all` | 全量同步账号已关注的**全部** UP 主投稿 | 想"关注即备份"；⚠️ 关注数多时首轮拉取量大 |
+| `list` | 只同步 `list` 中列出的 UID | 精准监控少数 UP 主；无需关注关系，可监控任意人 |
+
+- `all` 模式首次启用时建议设置 `max_downloads_per_run: 5` 试跑一轮，观察风控与磁盘消耗后再放开。
+- `list` 模式条目支持 `[{mid: 946974, name: "某UP主"}]` 或纯 UID `[946974]`；省略名称时自动向 B 站补全。
+- **取关语义**：取关（或从 list 移除）后，该 UP 主不再被扫描，但本地已备份的资产**永久保留**，程序不存在任何删除逻辑。
+- 关注源与收藏夹共享同一套资产保护：失效投稿自动建墓碑或触发孤本保护；已完整归档的跳过。
+
+**观看历史同步（`system.sync_watch_history`）**
+
+- 开启后只把观看过的视频**元数据**（bvid、标题、UP 主、观看时间）记入本地数据库，**不会下载任何视频本体**。
+- 用途：留存"我什么时候看过什么"的私人观影档案；记录不参与媒体库整理与巡检。
+- `max_history_days` 控制回溯窗口（默认 90 天，`0` 不限）。历史动辄上万条，首次全量拉取请理解风控风险；增量轮次只追新记录，负担很小。
+
+**完整性巡检（`system.verify_integrity`）**
+
+| 档位 | 校验内容 | 代价 | 适合 |
+|---|---|---|---|
+| `off` | 不校验（默认） | 无 | 下载后基本不管、库小 |
+| `light` | 文件非空 + 媒体容器签名（MP4/MKV/FLV/AVI 等） | 极低（纯字节读取） | 日常巡检推荐 |
+| `full` | light 基础上追加 `ffmpeg` 前 5 秒解码探测 | 较高（CPU/时间） | 怀疑有坏文件、或重要库定期体检 |
+
+- 每轮扫描最多抽样校验 20 个资产：从未校验的优先，之后最久未校验优先；大库会摊薄到多轮完成。
+- 结果写入数据库 `integrity_status`（0 未校验 / 1 通过 / 2 损坏），WebUI 资产页可见。
+- **只标记，不删除**：损坏文件（含孤本）会被保留并标记为"完整性异常"，是否重新下载由你根据源端是否还在自行决定。
+- `full` 档位依赖 FFmpeg：找不到时该项校验报错标记，不会中断扫描。
+
 
 ---
 
@@ -196,7 +248,26 @@ WebAPI 使用 SQLite `mode=ro` 浏览资产，不创建或迁移数据库。设�
 python main.py --cli --limit 3
 ```
 
-### 5. 开发测试
+### 5. 使用 PyInstaller 打包（可选，免 Python 环境分发）
+
+核心引擎可以打包为免 Python 环境的单目录可执行文件，适合分发给不想装 Python 环境的用户：
+
+```bash
+# 在已安装依赖的虚拟环境中执行
+pip install -r requirements.txt
+pip install pyinstaller
+venv\Scripts\python.exe -m PyInstaller build.spec --noconfirm
+
+# 产物位于 dist\BiliArchive-Pro\，冒烟验证：
+dist\BiliArchive-Pro\BiliArchive-Pro.exe --version
+```
+
+- 产物为**单目录模式**：整个 `dist\BiliArchive-Pro\` 目录缺一不可，分发时整体打包（zip）交付。
+- 运行时程序会把工作目录切换到 exe 所在位置，`config.yaml`、`data/`、`downloads/`、`bin/`（ffmpeg/yt-dlp）都放在 exe 旁边即可，与源码运行的目录布局一致。
+- **不含** `login.py` 与 WebUI：登录需要终端二维码交互，WebUI 需要前端构建产物，二者仍以源码方式运行。
+- FFmpeg 不内嵌：把 `ffmpeg.exe` 放到 exe 同目录的 `bin/` 下，或保证其在系统 PATH 中。
+
+### 6. 开发测试
 如果你要参与开发或验证改动，可以安装开发依赖并运行测试：
 ```bash
 pip install -r requirements-dev.txt
@@ -207,9 +278,16 @@ cd webui && npm ci && npm run lint && npm run build
 
 ---
 
-## 🧾 最新改进（v1.4.0）
+## 🧾 最新改进（v1.5.0）
 
 完整版本说明见 [CHANGELOG.md](CHANGELOG.md)。
+
+- 新增观看历史元数据同步：`sync_watch_history` 开启后把看过的视频记为本地观影档案（仅元数据，不下载视频本体），`max_history_days` 控制回溯窗口，增量轮次只追新记录。
+- 新增完整性巡检：`verify_integrity` 三档（off/light/full），light 校验文件非空与媒体容器签名，full 追加 ffmpeg 快速解码探测；每轮抽样最多 20 个资产，损坏只标记不删除。
+- 旧数据库打开时自动迁移新字段（`integrity_status`/`last_verify`），WebUI 资产页自动展示巡检结果。
+- 播放列表同步与既有合集同步（`sync_collections`）收敛：两者使用同一 B 站 API，不再重复实现。
+
+### v1.4.0 改进
 
 - 新增关注 UP 主全量同步：`followings.mode` 支持 `all`（同步账号全部关注）与 `list`（按 UID 指定，可监控任意 UP 主）；失效投稿自动进入墓碑与孤本保护，取关后本地已备份资产保留不动。
 - 新增 PyInstaller 打包配置 `build.spec`：核心引擎可打包为免 Python 环境的单目录分发（Windows 实测通过）。
@@ -275,6 +353,8 @@ cd webui && npm ci && npm run lint && npm run build
 - [x] **WebUI 管理面板**：提供概览、资产浏览和白名单设置页面；数据库只读，远程监听必须配置 Token。
 - [x] **智能路径管理**：跨平台安全的路径名非法字符过滤与防爆长路径自动截断机制。
 - [x] **全量同步关注UP主**：`followings.mode` 支持 `all`（全部关注）/ `list`（指定 UID），失效投稿自动进入墓碑与孤本保护；取关后本地资产保留。
+- [x] **观看历史元数据**：`sync_watch_history` 把看过的视频记录为本地观影档案（仅元数据，不下载本体），支持 `max_history_days` 窗口。
+- [x] **完整性巡检**：`verify_integrity` 三档（off/light/full）抽样校验已归档媒体，抓"存在但损坏"的静默失败，只标记不删除。
 - [x] **跨平台打包**：提供 PyInstaller 打包配置 `build.spec`（核心引擎单目录分发，Windows 实测通过）。
 
 ### 🟡 扩展功能 (规划中/开发中)
