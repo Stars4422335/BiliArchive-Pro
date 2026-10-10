@@ -1,7 +1,7 @@
 import asyncio
 
 import httpx
-from bilibili_api import favorite_list, video
+from bilibili_api import favorite_list, video, user
 
 
 class SyncFetchError(RuntimeError):
@@ -109,6 +109,26 @@ class BiliParser:
 
             print(f"[+] 成功拉取第 {page} 页 {len(parsed_list)} 个收藏记录。")
             return parsed_list, bool(video_list.get("has_more", False))
+
+        return await self._fetch_with_retry(label, fetch)
+
+    async def get_user_info(self, mid):
+        """获取 UP 主基本信息（用于关注源补全 UP 主名称）。"""
+        try:
+            normalized_mid = int(mid)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("UP 主 mid 必须是正整数 UID") from exc
+        if normalized_mid <= 0:
+            raise ValueError("UP 主 mid 必须是正整数 UID")
+
+        label = f"获取 UP 主 {normalized_mid} 信息"
+
+        async def fetch():
+            u = user.User(uid=normalized_mid, credential=self.credential)
+            info = await u.get_user_info()
+            if not isinstance(info, dict) or not info.get("name"):
+                raise ValueError("UP 主信息返回结构缺少 name")
+            return info
 
         return await self._fetch_with_retry(label, fetch)
 
@@ -338,5 +358,152 @@ class BiliParser:
             page_num = int(page_info.get("page_num", page_info.get("pn", page)))
             page_size = int(page_info.get("page_size", page_info.get("ps", 30)))
             return parsed_list, total > page_num * page_size
+
+        return await self._fetch_with_retry(label, fetch)
+
+    async def get_followings(self, page=1, page_size=50):
+        """拉取登录账号的全部关注 UP 主列表（公开关注关系接口）。"""
+        if not self.uid:
+            raise ValueError("关注列表同步需要已登录的 UID（cookie 中 dedeuserid）")
+
+        label = f"拉取关注列表第 {page} 页"
+        print(f"[*] 正在{label}...")
+
+        async def fetch():
+            url = (
+                "https://api.bilibili.com/x/relation/followings"
+                f"?vmid={int(self.uid)}&pn={page}&ps={page_size}&order=desc"
+            )
+            cookies = self.credential.get_cookies() if self.credential else {}
+            headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/122.0.0.0 Safari/537.36"
+                )
+            }
+            async with httpx.AsyncClient(
+                cookies=cookies,
+                headers=headers,
+                timeout=self.request_timeout_seconds,
+            ) as client:
+                response = await client.get(url)
+                response.raise_for_status()
+                data = response.json()
+
+            if not isinstance(data, dict):
+                raise ValueError("关注列表返回结构不是映射")
+            if data.get("code") != 0:
+                raise RuntimeError(data.get("message", "未知错误"))
+
+            payload = data.get("data") or {}
+            if not isinstance(payload, dict):
+                raise ValueError("关注列表 data 不是映射")
+            raw_list = payload.get("list")
+            if not isinstance(raw_list, list):
+                raise ValueError("关注列表 list 不是列表")
+
+            parsed_list = []
+            for item in raw_list:
+                if not isinstance(item, dict):
+                    raise ValueError("关注列表包含无效条目")
+                mid = item.get("mid")
+                if not mid:
+                    raise ValueError("关注列表条目缺少 mid")
+                parsed_list.append(
+                    {
+                        "mid": int(mid),
+                        "uname": str(item.get("uname") or f"UP_{mid}"),
+                        "sign": str(item.get("sign") or ""),
+                        "face": str(item.get("face") or ""),
+                    }
+                )
+
+            print(f"[+] 成功拉取第 {page} 页 {len(parsed_list)} 个关注 UP 主。")
+            # 关注接口无 has_more 字段：满页才可能有下一页
+            return parsed_list, len(parsed_list) >= page_size
+
+        return await self._fetch_with_retry(label, fetch)
+
+    async def get_user_videos(self, mid, page=1, page_size=30):
+        """拉取指定 UP 主的投稿视频列表（按发布时间倒序）。"""
+        try:
+            normalized_mid = int(mid)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("UP 主 mid 必须是正整数 UID") from exc
+        if normalized_mid <= 0:
+            raise ValueError("UP 主 mid 必须是正整数 UID")
+
+        label = f"拉取 UP 主 {normalized_mid} 投稿第 {page} 页"
+        print(f"[*] 正在{label}...")
+
+        async def fetch():
+            url = (
+                "https://api.bilibili.com/x/space/wbi/arc/search"
+                f"?mid={normalized_mid}&pn={page}&ps={page_size}"
+                "&order=pubdate&tid=0"
+            )
+            cookies = self.credential.get_cookies() if self.credential else {}
+            headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/122.0.0.0 Safari/537.36"
+                ),
+                "Referer": f"https://space.bilibili.com/{normalized_mid}/video",
+            }
+            async with httpx.AsyncClient(
+                cookies=cookies,
+                headers=headers,
+                timeout=self.request_timeout_seconds,
+            ) as client:
+                response = await client.get(url)
+                response.raise_for_status()
+                data = response.json()
+
+            if not isinstance(data, dict):
+                raise ValueError("UP 主投稿返回结构不是映射")
+            if data.get("code") != 0:
+                raise RuntimeError(data.get("message", "未知错误"))
+
+            payload = data.get("data") or {}
+            if not isinstance(payload, dict):
+                raise ValueError("UP 主投稿 data 不是映射")
+            list_payload = payload.get("list") or {}
+            if not isinstance(list_payload, dict):
+                raise ValueError("UP 主投稿 list 不是映射")
+            vlist = list_payload.get("vlist")
+            if vlist is None:
+                vlist = []
+            if not isinstance(vlist, list):
+                raise ValueError("UP 主投稿 vlist 不是列表")
+
+            parsed_list = []
+            for item in vlist:
+                if not isinstance(item, dict):
+                    raise ValueError("UP 主投稿包含无效条目")
+                aid = item.get("aid") or item.get("id") or 0
+                parsed_list.append(
+                    {
+                        "title": item.get("title") or (
+                            "已失效视频" if not item.get("bvid") else "Unknown"
+                        ),
+                        "bvid": item.get("bvid") or "",
+                        "id": aid,
+                        "aid": aid,
+                        "type": "video",
+                        "up_name": item.get("author", "Unknown"),
+                        "cover": item.get("pic", ""),
+                        "intro": item.get("description", ""),
+                        "pubtime": item.get("created", 0),
+                    }
+                )
+
+            print(f"[+] 成功拉取 UP 主投稿第 {page} 页 {len(parsed_list)} 个视频。")
+            page_info = payload.get("page") or {}
+            if not isinstance(page_info, dict):
+                raise ValueError("UP 主投稿 page 不是映射")
+            total = int(page_info.get("total", 0) or 0)
+            return parsed_list, total > page * page_size
 
         return await self._fetch_with_retry(label, fetch)

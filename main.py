@@ -297,6 +297,75 @@ async def _run_scan_loop(config, cred, uid, db, runtime=None):
                 if not completed:
                     incomplete_sources.append(label)
 
+        # 接续处理关注 UP 主投稿
+        followings_config = config.get('followings') or {}
+        followings_mode = str(followings_config.get('mode', 'off')).strip().lower()
+        if followings_config and followings_mode != 'off':
+            known_names = {}
+            if followings_mode == 'all':
+                # 全量同步所有关注 UP 主（首轮拉取量大，受 max_downloads_per_run 保护）
+                if not scanner.max_global_downloads or scanner.global_download_count < scanner.max_global_downloads:
+                    label = "关注列表"
+                    _update_runtime(
+                        runtime,
+                        phase="source",
+                        source=label,
+                        current_title=None,
+                        current_asset=None,
+                        message="正在读取账号关注列表",
+                    )
+                    try:
+                        page = 1
+                        while True:
+                            follows, has_more = await scanner.parser.get_followings(page=page)
+                            for follow in follows:
+                                known_names[follow['mid']] = follow['uname']
+                            if not has_more:
+                                break
+                            page += 1
+                            await asyncio.sleep(1.5)
+                    except SyncFetchError as exc:
+                        print(f"[-] 关注列表读取失败，本轮跳过关注源: {exc}")
+                    print(f"[*] 共发现 {len(known_names)} 个关注 UP 主")
+            elif followings_mode == 'list':
+                for entry in followings_config.get('list', []):
+                    if isinstance(entry, dict):
+                        try:
+                            known_names[int(entry.get('mid'))] = str(
+                                entry.get('name') or f"UP_{int(entry.get('mid'))}"
+                            )
+                        except (TypeError, ValueError):
+                            print(f"[-] 关注源列表条目缺少有效 mid，跳过: {entry}")
+                    else:
+                        try:
+                            known_names[int(entry)] = f"UP_{int(entry)}"
+                        except (TypeError, ValueError):
+                            print(f"[-] 关注源列表条目不是有效 UID，跳过: {entry}")
+            else:
+                print(f"[-] followings.mode 配置无效（应为 off/all/list）: {followings_mode}")
+
+            for follow_mid, follow_name in known_names.items():
+                if scanner.max_global_downloads and scanner.global_download_count >= scanner.max_global_downloads:
+                    break
+                label = f"关注 {follow_name} ({follow_mid})"
+                _update_runtime(
+                    runtime,
+                    phase="source",
+                    source=label,
+                    current_title=None,
+                    current_asset=None,
+                    message=f"正在扫描{label}",
+                )
+                completed = await _run_source_scan(
+                    label,
+                    lambda follow_mid=follow_mid, follow_name=follow_name: scanner.scan_following(
+                        follow_mid,
+                        follow_name,
+                    ),
+                )
+                if not completed:
+                    incomplete_sources.append(label)
+
         # 如果达到了 limit，则直接退出整个程序
         if scanner.max_global_downloads and scanner.global_download_count >= scanner.max_global_downloads:
             print("\n[+] 达到指定下载数量，任务完毕，安全退出。")

@@ -30,6 +30,18 @@ network:
   # 示例: "https://mirror.ghproxy.com/"
   github_proxy_url: "" 
 
+followings:
+  # 关注 UP 主投稿同步。取关 UP 主后，本地已备份的资产默认保留不动（与孤本保护精神一致）。
+  # mode:
+  #   off  = 关闭（默认）
+  #   all  = 全量同步登录账号的全部关注 UP 主（⚠️ 首轮拉取量大，建议配 max_downloads_per_run 保护）
+  #   list = 只同步下方 list 中显式列出的 UID（无需关注关系，也可用于监控任意 UP 主）
+  mode: "off"
+  list:
+    # - mid: 946974
+    #   name: "某UP主"        # name 可省略，省略时自动向 B 站查询
+    # - mid: 12345678
+
 components:
   yt-dlp:
     strategy: "auto"           # auto (校验后更新), notify (仅提醒), off (关闭)

@@ -1,6 +1,37 @@
 BiliArchive-Pro 进度记录
 ========================
 
+## 2026-10-10 - Task: M2-F1 关注 UP 主全量同步（已完成）
+
+### What was done:
+- app/core/parser.py 新增三个 API（均走 _fetch_with_retry 统一重试）：
+  * get_followings()：x/relation/followings 全量关注列表分页（满页才续翻）
+  * get_user_videos(mid)：空间投稿搜索按 pubdate 倒序，输出与收藏夹一致的条目 schema
+  * get_user_info(mid)：UP 主名补全（关注源未配 name 时目录命名用）
+- app/scheduler/scanner.py 新增 scan_following(mid, up_name)，与收藏夹管线同构：
+  失效投稿→墓碑/孤本保护；完整记录→跳过+last_check；不完整→续跑修复。
+  取关后本地资产保留不动（用户已拍板），无任何清除逻辑
+- main.py：合集之后接入 followings.mode（off/all/list）；list 支持 [{mid,name}] 或纯 UID，
+  list 模式不依赖登录关注关系（可监控任意 UP 主）
+- config.yaml：新增 followings 配置块（mode 默认 off，注释含取关保留语义说明）
+- 完善计划书.md：进度行与 F1 执行记录更新，记录与原方案的差异
+  （video_types/scan_interval_multiplier/source_type 暂缓的原因）
+
+### Testing:
+- 新增 tests/test_followings.py 5 例：新投稿下载+失效墓碑、完整记录跳过、
+  非法 mid 拒绝、UP 主名自动补全、关注列表分页解析
+- 全量回归 131 passed（126 旧 + 5 新）
+- 注意：get_user_videos 用空间投稿 API（x/space/wbi/arc/search），真实环境
+  首轮拉取量大时受风控影响需观察；max_downloads_per_run 保护已生效
+
+### Notes:
+- 取关保留语义：scan_following 只按当前投稿列表增量拉取，本地多余的记录/文件
+  永不删除——"取关"仅意味着该 UP 主不再出现在 all 模式的枚举结果中
+- 暂缓项（见计划书 F1 执行记录）：video_types（图文）、scan_interval_multiplier、
+  source_type 字段迁移
+- M2 下一步：F3 完整性巡检（小）或 F2 播放列表+观看历史（需先拍板决策点 3：
+  历史记录是否下载视频本体，默认建议=只记元数据）
+
 ## 2026-10-10 - Task: 安全加固（Mimosa L3 finding 第一/二类修复，M1 收尾追加）
 
 ### What was done:
