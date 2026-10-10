@@ -226,7 +226,7 @@ class ReadOnlyDatabase:
 
     def __init__(self, path: os.PathLike[str] | str, *, timeout_ms: int = 5000):
         self.path = Path(path)
-        self.timeout_ms = timeout_ms
+        self.timeout_ms = int(timeout_ms)
 
     def connect(self) -> sqlite3.Connection:
         uri = f"{self.path.resolve().as_uri()}?mode=ro"

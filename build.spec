@@ -39,6 +39,9 @@ a = Analysis(
         'uvicorn.protocols.websockets.websockets_impl',
         'uvicorn.lifespan',
         'uvicorn.lifespan.on',
+        # defusedxml 通过 from-import 子模块引用，确保打全
+        'defusedxml',
+        'defusedxml.minidom',
     ],
     hookspath=[],
     hooksconfig={},

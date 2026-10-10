@@ -1,4 +1,5 @@
 import os
+import re
 import sqlite3
 from datetime import datetime
 
@@ -52,6 +53,8 @@ class DatabaseManager:
 
             for column_name, definition in self._MIGRATABLE_COLUMNS.items():
                 if column_name not in columns:
+                    if not re.fullmatch(r"[a-z_][a-z0-9_]*", column_name):
+                        raise RuntimeError(f"迁移列名不合法，已拒绝执行: {column_name}")
                     self.conn.execute(
                         f"ALTER TABLE assets ADD COLUMN {column_name} {definition}"
                     )

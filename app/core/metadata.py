@@ -3,7 +3,7 @@ import re
 import shutil
 import requests
 import xml.etree.ElementTree as ET
-from xml.dom import minidom
+from defusedxml import minidom as defused_minidom
 from datetime import datetime
 from bs4 import BeautifulSoup
 
@@ -13,6 +13,28 @@ class MetadataGenerator:
     def _safe_stem(value):
         clean_value = re.sub(r'[\\/:*?"<>|]', '_', str(value or "info"))
         return clean_value.replace("\n", " ").replace("\r", " ").strip()[:100] or "info"
+
+    @staticmethod
+    def _ensure_within(base_dir, candidate_path):
+        """防御纵深：校验拼合路径解析后仍位于 base_dir 内，防止标题/文件名残留 .. 等片段造成路径穿越。"""
+        base = os.path.realpath(base_dir)
+        resolved = os.path.realpath(candidate_path)
+        if os.path.commonpath([base, resolved]) != base:
+            raise ValueError(f"路径越界，已拒绝写入: {candidate_path}")
+        return candidate_path
+
+    # 专栏正文中允许下载图片的 CDN 域名（防正文注入外链导致 SSRF）
+    _TRUSTED_IMAGE_HOST_SUFFIXES = (".hdslb.com", ".bilibili.com", "hdslb.com", "bilibili.com")
+
+    @classmethod
+    def _is_trusted_image_url(cls, img_url):
+        try:
+            from urllib.parse import urlparse
+            host = urlparse(img_url).hostname or ""
+        except ValueError:
+            return False
+        host = host.lower()
+        return any(host == s or host.endswith(s) for s in cls._TRUSTED_IMAGE_HOST_SUFFIXES)
 
     @staticmethod
     def _add_common_fields(root, video_info, status="Active"):
@@ -50,11 +72,13 @@ class MetadataGenerator:
         ET.SubElement(root, "plot").text = plot_text
 
     @staticmethod
-    def _write_nfo(root, nfo_path):
+    def _write_nfo(root, nfo_path, base_dir=None):
         try:
+            if base_dir is not None:
+                MetadataGenerator._ensure_within(base_dir, nfo_path)
             os.makedirs(os.path.dirname(nfo_path), exist_ok=True)
             xml_bytes = ET.tostring(root, encoding='utf-8')
-            xml_str = minidom.parseString(xml_bytes).toprettyxml(indent="  ")
+            xml_str = defused_minidom.parseString(xml_bytes).toprettyxml(indent="  ")
             with open(nfo_path, "w", encoding="utf-8") as f:
                 f.write(xml_str)
             print(f"[+] NFO 元数据已生成: {nfo_path}")
@@ -77,6 +101,7 @@ class MetadataGenerator:
         return MetadataGenerator._write_nfo(
             root,
             os.path.join(save_path, f"{stem}.nfo"),
+            base_dir=save_path,
         )
 
     @staticmethod
@@ -111,6 +136,7 @@ class MetadataGenerator:
         return MetadataGenerator._write_nfo(
             root,
             os.path.join(save_path, f"{MetadataGenerator._safe_stem(file_stem)}.nfo"),
+            base_dir=save_path,
         )
 
     @staticmethod
@@ -130,6 +156,9 @@ class MetadataGenerator:
             return None
         if os.path.exists(target_path) and not overwrite:
             return target_path
+        MetadataGenerator._ensure_within(
+            os.path.dirname(target_path) or ".", target_path
+        )
 
         try:
             os.makedirs(os.path.dirname(target_path), exist_ok=True)
@@ -191,10 +220,15 @@ class MetadataGenerator:
                         else:
                             img_url = str(img_url)
                         if img_url.startswith("//"): img_url = "https:" + img_url
+                        if not MetadataGenerator._is_trusted_image_url(img_url):
+                            print(f"[!] 跳过非 B 站 CDN 图片: {img_url}")
+                            continue
                         
                         # 清理图片后缀下载原图
                         img_name = os.path.basename(img_url).split('@')[0]
-                        local_img_path = os.path.join(img_dir, img_name)
+                        local_img_path = MetadataGenerator._ensure_within(
+                            img_dir, os.path.join(img_dir, img_name)
+                        )
                         
                         try:
                             # 下载并保存图片
@@ -208,7 +242,9 @@ class MetadataGenerator:
 
             # 写入 Markdown 文件
             clean_title = re.sub(r'[\\/:*?"<>|]', '_', title)
-            md_path = os.path.join(save_path, f"{clean_title}.md")
+            md_path = MetadataGenerator._ensure_within(
+                save_path, os.path.join(save_path, f"{clean_title}.md")
+            )
             with open(md_path, "w", encoding="utf-8") as f:
                 f.writelines(md_lines)
             
