@@ -1,6 +1,7 @@
 import asyncio
 import os
 import re
+import time
 
 from bilibili_api import aid2bvid
 from app.core.parser import BiliParser
@@ -618,6 +619,95 @@ class FavScanner:
             page += 1
             if has_more:
                 await self._wait_for_next_page()
+
+    async def sync_watch_history(self, max_pages=50):
+        """同步观看历史到 watch_history 表（仅元数据，不下载视频本体）。
+
+        增量策略：历史按观看时间倒序返回，一旦本页最早记录早于
+        max_history_days 窗口或库里已记录的最早时间，即停止翻页。
+        """
+        system_config = self.config.get('system', {})
+        max_days = int(system_config.get('max_history_days', 90) or 0)
+        window_start = 0
+        if max_days > 0:
+            window_start = int(time.time()) - max_days * 86400
+
+        known_oldest = self.db.oldest_history_view_at()
+        print(
+            f"\n[>>>] 开始同步观看历史"
+            f"（窗口 {max_days} 天，已记录最早: {known_oldest}）"
+        )
+
+        page = 1
+        while page <= max_pages:
+            items, has_more = await self.parser.get_watch_history(page=page)
+            if not items:
+                break
+
+            new_count = 0
+            reached_known = False
+            for item in items:
+                view_at = int(item.get("view_at") or 0)
+                if window_start and view_at < window_start:
+                    reached_known = True
+                    continue
+                if known_oldest and view_at <= known_oldest:
+                    # 本页已触及上次同步的记录，视为增量已追平
+                    reached_known = True
+                self.db.record_watch_history(
+                    item["bvid"],
+                    item["title"],
+                    item["up_name"],
+                    view_at,
+                )
+                new_count += 1
+
+            print(
+                f"[*] 历史第 {page} 页写入 {new_count} 条"
+                + ("（已触及已知记录，停止翻页）" if reached_known else "")
+            )
+            if reached_known or not has_more:
+                break
+            page += 1
+            await self._wait_for_next_page()
+
+        total = self.db.conn.execute(
+            "SELECT COUNT(*) FROM watch_history"
+        ).fetchone()[0]
+        print(f"[+] 观看历史同步完成，当前共 {total} 条元数据记录。")
+
+    async def verify_integrity(self, verifier, batch_size=20):
+        """按批抽样校验已完成资产的媒体文件完整性（只报告，不删除）。"""
+        if not verifier.enabled:
+            return
+        candidates = self.db.candidates_for_verify(limit=batch_size)
+        if not candidates:
+            print("[*] 完整性巡检：暂无待校验资产。")
+            return
+
+        print(
+            f"\n[>>>] 开始完整性巡检（模式 {verifier.mode}，本批 {len(candidates)} 个资产）"
+        )
+        corrupt_count = 0
+        for asset in candidates:
+            ok, reason, checked = verifier.verify_asset(asset)
+            if ok:
+                self.db.update_integrity(asset["bvid"], self.db.INTEGRITY_OK)
+                print(f"[+] 完整性通过: {asset['bvid']}（{checked} 个媒体文件）")
+            else:
+                self.db.update_integrity(asset["bvid"], self.db.INTEGRITY_CORRUPT)
+                corrupt_count += 1
+                print(
+                    f"[-] 完整性异常: {asset['bvid']}: {reason}"
+                    "（已标记，不会自动删除；若源端仍在可考虑重新下载）"
+                )
+            # 文件 IO 密集，给磁盘喘息
+            await asyncio.sleep(0.2)
+
+        print(
+            f"[+] 本批巡检完成：通过 {len(candidates) - corrupt_count}，"
+            f"异常 {corrupt_count}。"
+        )
 
     async def scan_collection(self, collection_id, collection_name, mid):
         """扫描UP主的合集列表"""

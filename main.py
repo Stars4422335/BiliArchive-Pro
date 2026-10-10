@@ -23,6 +23,7 @@ from app.core.config_manager import (
     load_yaml_mapping as _load_yaml_mapping,
     merge_config as _merge_config,
 )
+from app.core.integrity import IntegrityVerifier
 from app.core.parser import SyncFetchError
 from app.core.path_manager import PathManager
 from app.core.runtime_state import RuntimeStateWriter, runtime_state_path
@@ -365,6 +366,45 @@ async def _run_scan_loop(config, cred, uid, db, runtime=None):
                 )
                 if not completed:
                     incomplete_sources.append(label)
+
+        # 接续同步观看历史（仅记元数据，不下载视频本体——用户已拍板）
+        if config.get('system', {}).get('sync_watch_history', False):
+            if not scanner.max_global_downloads or scanner.global_download_count < scanner.max_global_downloads:
+                label = "观看历史"
+                _update_runtime(
+                    runtime,
+                    phase="source",
+                    source=label,
+                    current_title=None,
+                    current_asset=None,
+                    message="正在同步观看历史元数据",
+                )
+                completed = await _run_source_scan(
+                    label,
+                    lambda: scanner.sync_watch_history(),
+                )
+                if not completed:
+                    incomplete_sources.append(label)
+
+        # 完整性巡检：抽样校验已完成资产，抓"存在但损坏"的静默失败
+        verifier = IntegrityVerifier(config)
+        if verifier.enabled and (
+            not scanner.max_global_downloads
+            or scanner.global_download_count < scanner.max_global_downloads
+        ):
+            label = "完整性巡检"
+            _update_runtime(
+                runtime,
+                phase="source",
+                source=label,
+                current_title=None,
+                current_asset=None,
+                message=f"正在抽样校验资产完整性（{verifier.mode}）",
+            )
+            await _run_source_scan(
+                label,
+                lambda: scanner.verify_integrity(verifier),
+            )
 
         # 如果达到了 limit，则直接退出整个程序
         if scanner.max_global_downloads and scanner.global_download_count >= scanner.max_global_downloads:

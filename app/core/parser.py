@@ -3,7 +3,6 @@ import asyncio
 import httpx
 from bilibili_api import favorite_list, video, user
 
-
 class SyncFetchError(RuntimeError):
     """同步列表在有限重试后仍无法读取。"""
 
@@ -505,5 +504,49 @@ class BiliParser:
                 raise ValueError("UP 主投稿 page 不是映射")
             total = int(page_info.get("total", 0) or 0)
             return parsed_list, total > page * page_size
+
+        return await self._fetch_with_retry(label, fetch)
+
+    async def get_watch_history(self, page=1, page_size=100):
+        """拉取登录账号的观看历史（仅元数据用途，不触发下载）。"""
+        if not self.uid:
+            raise ValueError("观看历史同步需要已登录的 UID（cookie 中 dedeuserid）")
+
+        label = f"拉取观看历史第 {page} 页"
+        print(f"[*] 正在{label}...")
+
+        async def fetch():
+            result = await user.get_self_history(
+                page_num=page,
+                per_page_item=page_size,
+                credential=self.credential,
+            )
+            if not isinstance(result, list):
+                raise ValueError("观看历史返回结构不是列表")
+
+            parsed_list = []
+            for item in result:
+                if not isinstance(item, dict):
+                    raise ValueError("观看历史包含无效条目")
+                history = item.get("history") or {}
+                if not isinstance(history, dict):
+                    history = {}
+                bvid = str(history.get("bvid") or "").strip()
+                if not bvid:
+                    # 直播/课程等非视频历史无 bvid，跳过
+                    continue
+                owner = item.get("author_name", "Unknown")
+                parsed_list.append(
+                    {
+                        "bvid": bvid,
+                        "title": str(item.get("title") or "Unknown"),
+                        "up_name": str(owner or "Unknown"),
+                        "view_at": int(item.get("view_at", 0) or 0),
+                    }
+                )
+
+            print(f"[+] 成功拉取观看历史第 {page} 页 {len(parsed_list)} 条。")
+            # 历史接口按页返回，空页即到底
+            return parsed_list, len(parsed_list) > 0
 
         return await self._fetch_with_retry(label, fetch)

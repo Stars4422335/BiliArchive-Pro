@@ -1,6 +1,45 @@
 BiliArchive-Pro 进度记录
 ========================
 
+## 2026-10-10 - Task: M2-F2 观看历史元数据同步 + M2-F3 完整性巡检（已完成）
+
+### What was done:
+F2（历史只记元数据，用户已拍板不下载本体）：
+- app/core/parser.py 新增 get_watch_history()：bilibili_api get_self_history，
+  无 bvid 的直播/课程条目自动跳过
+- app/core/database_manager.py 新建 watch_history 表（bvid 主键 UPSERT）；
+  record_watch_history / oldest_history_view_at 方法
+- app/scheduler/scanner.py 新增 sync_watch_history()：按观看时间倒序翻页，
+  触及 max_history_days 窗口边界或库里已知最早记录即停止（增量语义）
+- 播放列表与现有 sync_collections 收敛（同一 B 站 seasons/series API），
+  不重复实现——计划书 F2 执行记录已注明
+F3（防"存在但损坏"的静默失败）：
+- 新模块 app/core/integrity.py：verify_integrity 三档 off/light/full。
+  light=非空+容器签名（MP4 ftyp 在偏移4/MKV/FLV/AVI/MPEG/MP3/OGG）；
+  full=ffmpeg -err_detect explode -t 5 快速解码探测
+- assets 表自动迁移新增 integrity_status（0/1/2）+ last_verify 列；
+  get_asset 带出新字段；candidates_for_verify 每轮抽样≤20 个
+  （未校验优先→最久未校验优先），大库摊薄到多轮
+- app/scheduler/scanner.py 新增 verify_integrity()：只标记不删除，
+  损坏时提示可考虑重新下载；main.py 扫描轮收尾处接入巡检与历史同步
+- config.yaml 新增 sync_watch_history / max_history_days / verify_integrity
+
+### Testing:
+- 新增 tests/test_history_integrity.py 10 例：历史窗口/增量停止、
+  完好MP4通过、空文件/伪文件拒绝、缺分P检测、ffmpeg调用与报错、
+  模式合法性、巡检写回结果、旧库自动迁移
+- 全量回归 141 passed（131 + 10）
+- 修复过程：媒体签名偏移 bug（ftyp 应在偏移4）、get_asset 漏新列、
+  database_manager 曾被一次误编辑破坏（CREATE TABLE 与后续语句粘连），
+  均已修复并被测试覆盖
+
+### Notes:
+- verify_integrity 的 full 模式依赖 ffmpeg（找不到时报错并标记，不会崩溃）
+- 巡检批次 20/轮 是保守值；如果资产数万级可调大 batch_size
+- 历史元数据记录不参与巡检（candidates 只查 type='video' AND status=0）
+- M2 里程碑功能全部完成（F1/F2/F3），下一步：发版 v1.5.0 或先浏览器验证 WebUI
+  （assets 新列会自动出现在 WebUI 资产查询里）
+
 ## 2026-10-10 - Task: M2-F1 关注 UP 主全量同步（已完成）
 
 ### What was done:

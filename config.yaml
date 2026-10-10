@@ -9,6 +9,9 @@ system:
   min_disk_gb: 5               # 磁盘爆盘保护阈值 (GB)
   plex_mode: true              # 多P使用 Season 01/S01E；false 时平铺为 P01/P02
   sync_watch_later: false      # 是否自动备份“稍后再看”列表
+  sync_watch_history: false    # 是否同步观看历史（仅记元数据进库，不下载视频本体）
+  max_history_days: 90         # 观看历史回溯窗口（天），0 表示不限（历史量大时慎用）
+  verify_integrity: "off"      # 完整性巡检：off=关闭 light=大小+文件头校验 full=追加 ffmpeg 解码探测
   check_update_on_start: false # 每次启动时检查组件更新
   scan_interval_seconds: 21600 # 每轮扫描结束后的休眠时间 (秒)
   max_downloads_per_run: 0     # 每次运行最大下载视频数 (0=无限制，下载全部；建议测试时设为1)

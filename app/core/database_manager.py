@@ -13,6 +13,9 @@ class DatabaseManager:
         "path": "TEXT",
         "last_check": "TEXT",
         "p_count": "INTEGER NOT NULL DEFAULT 1",
+        # F3 完整性巡检：0=未校验 1=通过 2=损坏
+        "integrity_status": "INTEGER NOT NULL DEFAULT 0",
+        "last_verify": "TEXT",
     }
 
     def __init__(self, db_path):
@@ -41,6 +44,17 @@ class DatabaseManager:
                     path TEXT,
                     last_check TEXT,
                     p_count INTEGER NOT NULL DEFAULT 1
+                )
+                """
+            )
+            self.conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS watch_history (
+                    bvid TEXT PRIMARY KEY NOT NULL CHECK (length(trim(bvid)) > 0),
+                    title TEXT,
+                    up_name TEXT,
+                    view_at INTEGER NOT NULL DEFAULT 0,
+                    last_sync TEXT
                 )
                 """
             )
@@ -141,7 +155,8 @@ class DatabaseManager:
         asset_key = self._validate_asset_key(bvid)
         row = self.conn.execute(
             """
-            SELECT bvid, title, type, status, path, last_check, p_count
+            SELECT bvid, title, type, status, path, last_check, p_count,
+                   integrity_status, last_verify
             FROM assets
             WHERE bvid=?
             """,
@@ -156,6 +171,8 @@ class DatabaseManager:
                 "path": row[4],
                 "last_check": row[5],
                 "p_count": row[6],
+                "integrity_status": row[7],
+                "last_verify": row[8],
             }
         return None
 
@@ -194,6 +211,64 @@ class DatabaseManager:
             self.conn.execute(
                 "UPDATE assets SET status=?, last_check=? WHERE bvid=?",
                 (status, now, asset_key),
+            )
+
+    def record_watch_history(self, bvid, title, up_name, view_at):
+        """记录/更新一条观看历史（仅元数据，不涉及下载资产）。"""
+        asset_key = self._validate_asset_key(bvid)
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with self.conn:
+            self.conn.execute(
+                """
+                INSERT INTO watch_history (bvid, title, up_name, view_at, last_sync)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(bvid) DO UPDATE SET
+                    title=excluded.title,
+                    up_name=excluded.up_name,
+                    view_at=excluded.view_at,
+                    last_sync=excluded.last_sync
+                """,
+                (asset_key, title, up_name, int(view_at or 0), now),
+            )
+
+    def oldest_history_view_at(self):
+        """返回已记录历史中最早（最小）的观看时间，用于停止翻页。"""
+        row = self.conn.execute(
+            "SELECT MIN(view_at) FROM watch_history"
+        ).fetchone()
+        return int(row[0]) if row and row[0] is not None else None
+
+    # F3 完整性巡检相关
+    INTEGRITY_UNKNOWN = 0
+    INTEGRITY_OK = 1
+    INTEGRITY_CORRUPT = 2
+
+    def candidates_for_verify(self, limit=20):
+        """挑选下一批完整性校验候选：已完成的 Active 视频资产，最久未校验优先。"""
+        rows = self.conn.execute(
+            """
+            SELECT bvid, path, p_count
+            FROM assets
+            WHERE status = 0 AND type = 'video'
+              AND path IS NOT NULL AND trim(path) != ''
+            ORDER BY last_verify IS NOT NULL, last_verify ASC, last_check ASC
+            LIMIT ?
+            """,
+            (int(limit),),
+        ).fetchall()
+        return [
+            {"bvid": row[0], "path": row[1], "p_count": int(row[2] or 1)}
+            for row in rows
+        ]
+
+    def update_integrity(self, bvid, integrity_status):
+        """写回单个资产的完整性校验结论。"""
+        asset_key = self._validate_asset_key(bvid)
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with self.conn:
+            self.conn.execute(
+                "UPDATE assets SET integrity_status=?, last_verify=? WHERE bvid=?",
+                (int(integrity_status), now, asset_key),
             )
 
     def close(self):
