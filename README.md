@@ -207,15 +207,21 @@ cd webui && npm ci && npm run lint && npm run build
 
 ---
 
-## 🧾 最新改进（v1.3.0）
+## 🧾 最新改进（v1.4.0）
 
 完整版本说明见 [CHANGELOG.md](CHANGELOG.md)。
+
+- 新增关注 UP 主全量同步：`followings.mode` 支持 `all`（同步账号全部关注）与 `list`（按 UID 指定，可监控任意 UP 主）；失效投稿自动进入墓碑与孤本保护，取关后本地已备份资产保留不动。
+- 新增 PyInstaller 打包配置 `build.spec`：核心引擎可打包为免 Python 环境的单目录分发（Windows 实测通过）。
+- 修复打包运行时的路径错误：`main.py`/`login.py` 在 PyInstaller frozen 环境下正确定位程序目录，源码模式行为不变。
+- 安全加固：专栏图片下载增加 B 站 CDN 域名白名单（防 SSRF）、新增路径包含检查纵深防御、NFO XML 解析改用 `defusedxml`、数据库迁移列名与 PRAGMA 参数加白名单/强转防护。
+
+### v1.3.0 改进
 
 - 新增独立 WebUI 管理进程，提供扫描概览、磁盘状态、真实封面、资产搜索/筛选/分页和响应式设置页。
 - WebAPI 使用 SQLite `mode=ro` 浏览媒体库；设置接口只允许公开白名单字段，并通过 revision 检测并发修改。
 - WebUI 默认仅监听 `127.0.0.1`；远程监听必须配置 Bearer Token，Token 仅保存在浏览器当前会话中。
 - Docker 镜像使用 Node 多阶段构建，仅携带前端 `dist`；Compose 可通过 `webui` profile 启动独立管理服务。
-
 - 多 P 视频按独立页面下载；Plex 模式生成 `Season 01/S01E##`、`tvshow.nfo`、分集 NFO 和标准封面，平铺模式使用稳定 `P##` 命名。
 - Active 记录按 `p_count` 与稳定分 P 标识复核，缺集自动续跑；关键 NFO 或标准封面失败时不写入数据库完成状态。
 - 同时请求普通字幕和自动字幕，弹幕转换支持滚动、反向、顶部、底部及轨道防重叠，并隔离异常文件。
