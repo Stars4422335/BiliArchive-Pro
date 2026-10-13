@@ -236,3 +236,133 @@ def test_assets_reject_unknown_type_filter(webui_fixture):
     response = client.get("/api/assets", params={"type": "unknown"})
 
     assert response.status_code == 422
+
+
+# ---------- command channel API ----------
+
+
+def test_commands_endpoint_lists_supported_commands_and_empty_queue(webui_fixture):
+    client, _, _ = webui_fixture
+
+    response = client.get("/api/commands")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body["supported"]) == {"trigger_scan", "restart", "redownload_asset"}
+    assert body["pending"] == []
+
+
+def test_post_command_queues_and_exposes_status(webui_fixture):
+    client, root, _ = webui_fixture
+
+    created = client.post(
+        "/api/commands",
+        json={"command": "trigger_scan", "note": "手动巡检"},
+    )
+
+    assert created.status_code == 202
+    record = created.json()
+    assert record["status"] == "pending"
+    # The command must land in commands.json next to the database.
+    inbox = json.loads((root / "commands.json").read_text(encoding="utf-8"))
+    assert [item["id"] for item in inbox["pending"]] == [record["id"]]
+
+    status = client.get(f"/api/commands/{record['id']}")
+    assert status.status_code == 200
+    assert status.json()["status"] == "pending"
+
+
+def test_post_command_accepts_redownload_with_asset_id(webui_fixture):
+    client, _, _ = webui_fixture
+
+    response = client.post(
+        "/api/commands",
+        json={"command": "redownload_asset", "payload": {"asset_id": "BV1GJ411x7h7"}},
+    )
+
+    assert response.status_code == 202
+    assert response.json()["payload"] == {"asset_id": "BV1GJ411x7h7"}
+
+
+def test_post_command_rejects_path_like_asset_id(webui_fixture):
+    client, root, _ = webui_fixture
+
+    response = client.post(
+        "/api/commands",
+        json={"command": "redownload_asset", "payload": {"asset_id": "../../etc/passwd"}},
+    )
+
+    assert response.status_code == 422
+    assert not (root / "commands.json").exists()
+
+
+def test_post_command_rejects_unsupported_and_delete_commands(webui_fixture):
+    client, _, _ = webui_fixture
+
+    for name in ("delete_asset", "drop_database", "nuke", ""):
+        response = client.post("/api/commands", json={"command": name})
+        assert response.status_code == 422
+
+
+def test_post_command_rejects_unknown_payload_argument(webui_fixture):
+    client, _, _ = webui_fixture
+
+    response = client.post(
+        "/api/commands",
+        json={
+            "command": "redownload_asset",
+            "payload": {"asset_id": "BV1GJ411x7h7", "force": True},
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_post_command_rejects_non_object_body(webui_fixture):
+    client, _, _ = webui_fixture
+
+    assert client.post("/api/commands", json=["trigger_scan"]).status_code == 422
+
+
+def test_command_status_returns_404_for_unknown_id(webui_fixture):
+    client, _, _ = webui_fixture
+
+    assert client.get("/api/commands/missing-id").status_code == 404
+
+
+def test_commands_api_requires_token_when_configured(webui_fixture):
+    _, root, config_path = webui_fixture
+    app = create_app(
+        project_root=root,
+        config_path=config_path,
+        db_path=root / "archive.db",
+        host="0.0.0.0",
+        token="test-token",
+    )
+    client = TestClient(app)
+
+    assert client.get("/api/commands").status_code == 401
+    assert client.post("/api/commands", json={"command": "trigger_scan"}).status_code == 401
+    assert client.get(
+        "/api/commands", headers={"Authorization": "Bearer test-token"}
+    ).status_code == 200
+    assert client.post(
+        "/api/commands",
+        json={"command": "trigger_scan"},
+        headers={"Authorization": "Bearer test-token"},
+    ).status_code == 202
+
+
+def test_commands_api_reports_unavailable_for_in_memory_database(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        yaml.safe_dump({"system": {"db_path": ":memory:", "download_path": "./downloads"}}),
+        encoding="utf-8",
+    )
+    app = create_app(project_root=tmp_path, config_path=config_path)
+    client = TestClient(app)
+
+    response = client.post("/api/commands", json={"command": "trigger_scan"})
+
+    assert response.status_code == 503
+    assert client.get("/api/commands").status_code == 503

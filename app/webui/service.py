@@ -15,6 +15,8 @@ from typing import Any, Iterable
 
 import yaml
 
+from app.core.commands import CommandError
+
 
 CONFIG_SCHEMA = {
     "system": {
@@ -57,6 +59,13 @@ STATUS_NAMES = {
 
 class ConfigValidationError(ValueError):
     """Raised when a WebUI configuration payload is outside the public schema."""
+
+
+def command_error(message: str, status: int = 422):
+    """Build a ``CommandError`` carrying an HTTP status for the API layer."""
+    error = CommandError(message)
+    error.status = status
+    return error
 
 
 def is_loopback_host(host: str) -> bool:
@@ -413,6 +422,50 @@ class WebService:
             return value if isinstance(value, dict) else {}
         except (FileNotFoundError, json.JSONDecodeError, OSError):
             return {}
+
+    # ---------- command channel ----------
+
+    def command_channel(self):
+        """Return a command channel next to the database, or raise.
+
+        The WebUI never talks to the daemon directly: it appends a command to
+        ``commands.json`` and lets the daemon pick it up on its next poll.
+        """
+        from app.core import commands as commands_module
+
+        path = commands_module.commands_path(self.load_raw_config())
+        if not path:
+            raise command_error("当前数据库配置不支持命令通道", status=503)
+        return commands_module.CommandChannel(path)
+
+    def command_snapshot(self) -> dict[str, Any]:
+        """Pending queue plus recent audit history, for the operator panel."""
+        snapshot = self.command_channel().snapshot()
+        from app.core import commands as commands_module
+
+        return {
+            "supported": list(commands_module.SUPPORTED_COMMANDS),
+            **snapshot,
+        }
+
+    def submit_command(self, body: Any) -> dict[str, Any]:
+        """Validate and queue one command, returning its queued record."""
+        if not isinstance(body, dict):
+            raise command_error("请求体必须是对象")
+        name = body.get("command")
+        if not isinstance(name, str) or not name.strip():
+            raise command_error("缺少 command 字段")
+        note = body.get("note", "")
+        if note is not None and not isinstance(note, str):
+            raise command_error("note 必须是字符串")
+        channel = self.command_channel()
+        return channel.enqueue(name.strip(), body.get("payload"), note=note or "")
+
+    def command_status(self, command_id: str) -> dict[str, Any]:
+        record = self.command_channel().command_status(command_id)
+        if record is None:
+            raise command_error("命令不存在", status=404)
+        return record
 
     def storage(self) -> dict[str, Any]:
         configured = self.download_root()

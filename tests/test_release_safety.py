@@ -53,8 +53,9 @@ def test_dockerfile_uses_explicit_runtime_copy_list():
     assert LOCAL_PLAN not in dockerfile
 
 
-def test_release_metadata_is_1_5_0():
-    expected_version = "1.5.0"
+def test_release_metadata_is_consistent():
+    expected_version = "1.6.0"
+    expected_date = "2026-10-13"
     dockerfile = (PROJECT_ROOT / "Dockerfile").read_text(encoding="utf-8")
     readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
     changelog = (PROJECT_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
@@ -68,4 +69,5 @@ def test_release_metadata_is_1_5_0():
     assert f"BILIARCHIVE_VERSION={expected_version}" in dockerfile
     assert f"Release: v{expected_version}" in readme
     assert f"最新改进（v{expected_version}）" in readme
-    assert f"## [{expected_version}] - 2026-10-10" in changelog
+    assert f"## [{expected_version}] - {expected_date}" in changelog
+    assert f"[{expected_version}]:" in changelog

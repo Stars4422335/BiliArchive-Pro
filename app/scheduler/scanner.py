@@ -3,7 +3,7 @@ import os
 import re
 import time
 
-from bilibili_api import aid2bvid
+from bilibili_api import aid2bvid, bvid2aid
 from app.core.parser import BiliParser
 from app.core.downloader import Downloader
 from app.core.metadata import MetadataGenerator
@@ -43,11 +43,57 @@ class FavScanner:
         self.cookie_path = config['system']['cookie_path']
         self.global_download_count = 0  # 全局下载计数器
         self._progress_callback = None
+        # 一次性强制重下白名单：由 WebUI 命令通道填充，命中后仅当轮豁免跳过逻辑
+        self._forced_redownloads = set()
         # 从配置读取最大下载数量，0或None表示无限制（下载全部）
         self.max_global_downloads = config.get('system', {}).get('max_downloads_per_run', 0)
 
     def set_progress_callback(self, callback):
         self._progress_callback = callback if callable(callback) else None
+
+    def request_redownload(self, asset_id):
+        """Queue one asset for forced re-download from the WebUI channel.
+
+        Both the BV and av spellings are registered so the exemption applies
+        regardless of which key the current source listing happens to use.
+        Returns the normalized set of keys to match against.
+        """
+        keys = set()
+        text = str(asset_id or "").strip()
+        if not text:
+            return keys
+        keys.add(text)
+        try:
+            if text.lower().startswith("av"):
+                aid = int(text[2:])
+                keys.add(aid2bvid(aid))
+            elif text.upper().startswith("BV"):
+                keys.add(f"av{bvid2aid(text)}")
+        except (TypeError, ValueError, IndexError, KeyError):
+            # An unconvertible key still matches itself; it simply will not
+            # gain the alternate spelling. bvid2aid raises IndexError on
+            # malformed input, so it must be caught here too.
+            pass
+        self._forced_redownloads.update(keys)
+        return keys
+
+    def _consume_forced_redownload(self, db_key):
+        """Return True once for a queued key, so a re-download happens once."""
+        if not db_key or db_key not in self._forced_redownloads:
+            return False
+        self._forced_redownloads.discard(db_key)
+        return True
+
+    def _should_skip_archived_video(self, db_key, local_record):
+        """Return True when a complete archived record may be skipped.
+
+        A WebUI redownload command flips the decision for exactly one pass,
+        and the key is consumed here so the next cycle skips it again.
+        """
+        if self._consume_forced_redownload(db_key):
+            print("[*] 已收到重下载指令，将强制重新抓取该资产。")
+            return False
+        return self._video_record_is_complete(local_record)
 
     def _report_progress(self, **payload):
         if self._progress_callback is None:
@@ -359,7 +405,7 @@ class FavScanner:
                 # 【情况B：正常视频处理】
                 if asset_type == "video":
                     if local_record and local_record['status'] == 0:
-                        if self._video_record_is_complete(local_record):
+                        if self._should_skip_archived_video(db_key, local_record):
                             print(f"[*] 已在库中，跳过并更新存活标记: {title}")
                             self.db.update_last_check(db_key)
                             continue
@@ -488,7 +534,7 @@ class FavScanner:
 
             # 【情况B：正常视频处理】
             if local_record and local_record['status'] == 0:
-                if self._video_record_is_complete(local_record):
+                if self._should_skip_archived_video(db_key, local_record):
                     print(f"[*] 已在库中，跳过并更新存活标记: {title}")
                     self.db.update_last_check(db_key)
                     continue
@@ -589,7 +635,7 @@ class FavScanner:
 
                 # 【情况B：正常投稿处理】
                 if local_record and local_record['status'] == 0:
-                    if self._video_record_is_complete(local_record):
+                    if self._should_skip_archived_video(db_key, local_record):
                         print(f"[*] 已在库中，跳过并更新存活标记: {title}")
                         self.db.update_last_check(db_key)
                         continue
@@ -761,7 +807,7 @@ class FavScanner:
                     continue
 
                 if local_record and local_record['status'] == 0:
-                    if self._video_record_is_complete(local_record):
+                    if self._should_skip_archived_video(db_key, local_record):
                         print(f"[*] 已在库中，跳过并更新存活标记: {title}")
                         self.db.update_last_check(db_key)
                         continue

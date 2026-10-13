@@ -5,6 +5,7 @@ import { configPayload, normalizeAssets, normalizeConfig, normalizeDashboard } f
 import { TokenGate } from "./components/ui";
 import OverviewView from "./views/OverviewView";
 import AssetsView from "./views/AssetsView";
+import OperationsView from "./views/OperationsView";
 import SettingsView from "./views/SettingsView";
 
 function emptyErrors() { return { dashboard: "", assets: "", config: "" }; }
@@ -119,6 +120,7 @@ export default function App() {
   return <AppShell activeView={activeView} onNavigate={setActiveView}>
     {activeView === "overview" && <OverviewView dashboard={data.dashboard} loading={loading.dashboard} error={errors.dashboard} onRetry={loadCoreData} onRefresh={loadCoreData} onOpenAssets={() => setActiveView("assets")} />}
     {activeView === "assets" && <AssetsView assets={data.assets} loading={loading.assets} error={errors.assets} onLoad={loadAssets} />}
+    {activeView === "operations" && <OperationsView requireAuthentication={requireAuthentication} />}
     {activeView === "settings" && <SettingsView config={data.config} loading={loading.config} error={errors.config} onRetry={loadCoreData} onSave={handleConfigSave} />}
   </AppShell>;
 }

@@ -72,4 +72,7 @@ export const api = {
   getAssetPoster: (assetId) => requestBlob(`/api/assets/${encodeURIComponent(assetId)}/poster`),
   getConfig: () => request("/api/config"),
   putConfig: (config) => request("/api/config", { method: "PUT", body: JSON.stringify(config) }),
+  getCommands: () => request("/api/commands"),
+  postCommand: (body) => request("/api/commands", { method: "POST", body: JSON.stringify(body) }),
+  getCommandStatus: (commandId) => request(`/api/commands/${encodeURIComponent(commandId)}`),
 };

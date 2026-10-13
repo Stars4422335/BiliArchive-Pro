@@ -15,8 +15,10 @@ from .service import (
     ConfigValidationError,
     RevisionConflict,
     WebService,
+    command_error,
     is_loopback_host,
 )
+from app.core.commands import CommandError
 
 
 def create_app(
@@ -152,6 +154,48 @@ def create_app(
             ) from exc
         except ConfigValidationError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @app.get("/api/commands")
+    async def list_commands() -> dict:
+        """Expose the supported command set, the queue and the audit trail."""
+        try:
+            return service.command_snapshot()
+        except CommandError as exc:
+            raise HTTPException(
+                status_code=getattr(exc, "status", 503), detail=str(exc)
+            ) from exc
+
+    @app.post("/api/commands")
+    async def submit_command(request: Request) -> JSONResponse:
+        """Queue one command for the daemon to pick up on its next poll.
+
+        Deliberately narrow: this endpoint can never delete local media.
+        """
+        try:
+            body = await request.json()
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="请求体必须是 JSON 对象") from exc
+        try:
+            record = service.submit_command(body)
+        except CommandError as exc:
+            raise HTTPException(
+                status_code=getattr(exc, "status", 422), detail=str(exc)
+            ) from exc
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return JSONResponse(record, status_code=202)
+
+    @app.get("/api/commands/{command_id}")
+    async def command_status(command_id: str) -> dict:
+        """Poll one command's acknowledgement state."""
+        try:
+            return service.command_status(command_id)
+        except CommandError as exc:
+            raise HTTPException(
+                status_code=getattr(exc, "status", 404), detail=str(exc)
+            ) from exc
         except (OSError, ValueError) as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 

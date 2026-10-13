@@ -4,6 +4,35 @@
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-10-13
+
+### WebUI 可操作化
+
+- WebUI 新增「操作」视图：可下发 `trigger_scan`（立即巡检）、`redownload_asset`（重下单个资产）、`restart`（提示重启核心）三条指令，并查看每条指令的执行回执。
+- 新增本地命令通道 `commands.json`（数据目录，与 `runtime.json` 同级）：原子写入、幂等认领、有界审计历史（最多保留 50 条），复用既有解耦哲学，不引入 WebSocket，WebUI 始终不直接连接守护进程。
+- 守护进程休眠改为可中断的分片轮询（默认 5 秒一片），"立即巡检"无需等待完整休眠周期即可唤醒；重下载请求在下一轮巡检命中该资产时生效。
+- `restart` 不做自杀式重启：核心在当前轮次结束后安全退出并关闭数据库，由 systemd / Docker / supervisor 按自身策略重新拉起。
+- 指令队列在每轮巡检开始前消费一次，保证重下载请求及时生效。
+
+### 安全边界
+
+- **删除本地资产不开放**：任何删除类指令都被 API 层与核心层双重拒绝，包括手工编辑 `commands.json` 注入的情况。
+- 资产编号只接受规范的 `BV` / `av` 编号（正则白名单），拒绝任意字符串与文件路径，因此命令载荷无法用于路径穿越。
+- 命令 `note` 与执行回执统一截断为单行 200 字符，避免注入多行内容污染审计日志。
+- 配置了 Token 时，命令端点与其余管理 API 一样受 Bearer 鉴权保护。
+
+### 测试
+
+- 后端测试从 141 例增加到 197 例：新增 `tests/test_commands.py`（46 例）覆盖路径解析、队列语义、幂等认领、审计留痕、载荷校验与注入防护。
+- `tests/test_webui_api.py` 新增 10 例覆盖命令端点：入队、状态查询、Token 鉴权、内存数据库不可用等。
+- 休眠行为测试改为验证"总时长等于配置值且每片不超过轮询间隔"，贴合新的可中断休眠语义。
+
+### 升级说明
+
+- 新功能全部向后兼容，未配置任何开关：核心引擎启动后自动创建命令通道，无需修改 `config.yaml`。
+- `commands.json` 与 `runtime.json` 一样位于数据库同级目录；若数据库使用 `:memory:`，命令通道自动不可用，WebUI「操作」视图会提示该限制。
+- 使用 Docker Compose 部署时请注意：`restart` 指令会让核心容器退出，若未配置重启策略需要手动拉起。
+
 ## [1.5.0] - 2026-10-10
 
 ### 观看历史元数据同步
@@ -135,7 +164,10 @@
 - 如果 `data/cookie.json` 曾被上传、打包或共享，应重新登录，使旧凭据失效。
 - 本版本不提供 EXE 或 App；跨平台独立可执行文件仍属于后续阶段。
 
-[Unreleased]: https://github.com/Stars4422335/BiliArchive-Pro/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/Stars4422335/BiliArchive-Pro/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.6.0
+[1.5.0]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.5.0
+[1.4.0]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.4.0
 [1.3.0]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.3.0
 [1.2.0]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.2.0
 [1.1.3]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.1.3

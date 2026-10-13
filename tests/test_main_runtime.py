@@ -94,22 +94,37 @@ def test_daemon_loop_applies_sdk_request_timeout(monkeypatch):
 
 
 def test_daemon_loop_uses_configured_scan_interval(monkeypatch):
+    """休眠总时长等于配置值，但被切成不超过轮询间隔的分片。
+
+    分片是命令通道的要求：守护进程必须在休眠期间保持可唤醒，
+    否则 WebUI 的 trigger_scan 要等完整休眠结束才会生效。
+    """
     slept = []
+    clock = {"now": 0.0}
 
     async def capture_sleep(seconds):
         slept.append(seconds)
-        raise asyncio.CancelledError(seconds)
+        # 模拟真实时钟推进，否则分片循环的 remaining 永不递减
+        clock["now"] += seconds
+        if clock["now"] >= 7:
+            raise asyncio.CancelledError(seconds)
 
     monkeypatch.setattr(main, "DatabaseManager", lambda db_path: DummyDatabase())
     monkeypatch.setattr(main, "PathManager", lambda root_path, plex_mode: object())
     monkeypatch.setattr(main, "FavScanner", DummyScanner)
     monkeypatch.setattr(main, "ComponentUpdater", DummyUpdater)
     monkeypatch.setattr(main.asyncio, "sleep", capture_sleep)
+    # 让 _sleep_until_next_scan 使用的时钟跟随模拟时钟推进
+    monkeypatch.setattr(main, "_loop_time", lambda: clock["now"])
 
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(main.daemon_loop(base_config(), cred=object(), uid=1))
 
-    assert slept == [7]
+    # 总休眠时长仍等于 scan_interval_seconds
+    assert sum(slept) == 7
+    # 每一片都不超过轮询间隔，保证休眠期可被命令唤醒
+    assert all(chunk <= main.COMMAND_POLL_INTERVAL for chunk in slept)
+    assert len(slept) > 1
 
 
 def test_daemon_loop_continues_after_one_source_fetch_failure(monkeypatch, capsys):

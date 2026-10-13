@@ -3,7 +3,7 @@
 > **带本地 WebUI 的 Bilibili 个人数字资产备份、同步与媒体库整理工具**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Release: v1.5.0](https://img.shields.io/badge/release-v1.5.0-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.5.0)
+[![Release: v1.6.0](https://img.shields.io/badge/release-v1.6.0-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.6.0)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 
 **BiliArchive-Pro** 旨在为 B 站深度用户提供一套稳定、安全且符合影视库管理规范（如 Plex、Jellyfin、Emby）的本地自动化备份方案。它不仅是一个支持最高 4K/HDR 画质的下载器，更是一个智能的**个人数字图书馆管理员**。
@@ -21,7 +21,7 @@
   - **墓碑机制 (Tombstone)**：扫描到收藏夹中已被 B 站删除的失效视频时，在本地生成 NFO 占位符，记录遗失的元数据。
   - **孤本保护**：如果本地已下载好的视频后来被源端删除，本地资产会自动打标锁定（如添加 `[源端已删]` 前缀），绝不发生误覆盖或同步删除。
 - ⚡ **周期巡检与防风控**：按配置周期全量巡检收藏夹，通过本地数据库跳过已归档资源并更新存活时间；翻页和下载后加入休眠，降低请求频率。
-- 🖥️ **本地 WebUI 管理面板**：独立进程展示扫描状态、磁盘空间和真实资产封面，支持跨页搜索、筛选及白名单配置编辑；不会远程删除资产或直接控制下载。
+- 🖥️ **本地 WebUI 管理面板**：独立进程展示扫描状态、磁盘空间和真实资产封面，支持跨页搜索、筛选及白名单配置编辑；可下发运维指令（触发巡检 / 重下单个资产 / 提示重启）并查看执行回执。
 - 💬 **弹幕智能渲染**：把当前媒体的 B 站 XML 弹幕转换为 `.ass`，分别调度滚动、顶部和底部轨道，过载时丢弃冲突项以避免文字重叠。
 - 🔄 **可选组件检查**：可按 `auto` / `notify` / `off` 策略检查 `yt-dlp`；自动更新前必须通过 GitHub 官方 SHA256 校验，同时验证系统或配置路径中的 FFmpeg 是否可用。
 
@@ -242,13 +242,36 @@ python web.py --host 0.0.0.0 --port 8000
 
 WebAPI 使用 SQLite `mode=ro` 浏览资产，不创建或迁移数据库。设置页只允许修改公开白名单字段，并原子写入本地覆盖配置；路径、Cookie 和代理地址不会通过 WebUI 暴露或修改。保存后重启核心进程以应用新配置。
 
-### 4. 测试与限制下载数量
+### 4. 从 WebUI 下发运维指令（v1.6.0 起）
+
+WebUI 新增「操作」视图，可直接向核心引擎下发指令，无需 SSH：
+
+| 指令 | 行为 | 说明 |
+|---|---|---|
+| `trigger_scan` | 立即巡检 | 跳过剩余休眠时间，提前开始下一轮巡检；进行中的下载不被中断 |
+| `redownload_asset` | 重下单个资产 | 按 BV / av 编号重新抓取；本地已有文件不会被删除，按原目录规则写入并计入本轮下载量 |
+| `restart` | 提示重启核心 | 核心在当前轮次结束后**安全退出并关闭数据库**，由 systemd / Docker / supervisor 重新拉起 |
+
+工作方式与 `runtime.json` 一致，属于本地文件命令通道，不引入 WebSocket：
+
+- WebUI 只把指令原子写入数据目录下的 `commands.json`，不直接连接守护进程。
+- 守护进程每 5 秒轮询一次，休眠期也保持可唤醒，因此"立即巡检"无需等完整休眠结束。
+- 每条指令都会被认领（claim）并回执，历史最多保留 50 条，可在「执行审计」中查看。
+
+**安全边界（设计如此，不提供开关）：**
+
+- **不开放删除本地资产**。任何删除类指令都会被拒绝，手工编辑 `commands.json` 注入也会被核心拒绝。
+- 资产编号只接受规范的 `BV` / `av` 编号，不接受任意字符串或文件路径，因此无法用于路径穿越。
+- 删除资产、强制覆盖等破坏性操作仍需在终端手工执行。
+- `restart` 不会自杀式重启：若由 Docker Compose 托管，核心退出后容器可能直接停止，请确认编排策略。
+
+### 5. 测试与限制下载数量
 如果你只是想测试一下环境是否跑通，可以使用 `--limit` 参数限制本次运行最大下载数（到达指定数量后程序会自动安全退出）：
 ```bash
 python main.py --cli --limit 3
 ```
 
-### 5. 使用 PyInstaller 打包（可选，免 Python 环境分发）
+### 6. 使用 PyInstaller 打包（可选，免 Python 环境分发）
 
 核心引擎可以打包为免 Python 环境的单目录可执行文件，适合分发给不想装 Python 环境的用户：
 
@@ -267,7 +290,7 @@ dist\BiliArchive-Pro\BiliArchive-Pro.exe --version
 - **不含** `login.py` 与 WebUI：登录需要终端二维码交互，WebUI 需要前端构建产物，二者仍以源码方式运行。
 - FFmpeg 不内嵌：把 `ffmpeg.exe` 放到 exe 同目录的 `bin/` 下，或保证其在系统 PATH 中。
 
-### 6. 开发测试
+### 7. 开发测试
 如果你要参与开发或验证改动，可以安装开发依赖并运行测试：
 ```bash
 pip install -r requirements-dev.txt
@@ -278,9 +301,17 @@ cd webui && npm ci && npm run lint && npm run build
 
 ---
 
-## 🧾 最新改进（v1.5.0）
+## 🧾 最新改进（v1.6.0）
 
 完整版本说明见 [CHANGELOG.md](CHANGELOG.md)。
+
+- WebUI 新增「操作」视图：可下发 `trigger_scan`（立即巡检）、`redownload_asset`（重下单个资产）、`restart`（提示重启核心）三条指令，并查看每条指令的执行回执与审计历史。
+- 新增本地命令通道 `commands.json`（原子写入 + 幂等认领 + 有界审计），复用 `runtime.json` 的解耦哲学，不引入 WebSocket，WebUI 始终不直接连接守护进程。
+- 守护进程休眠改为可中断的分片轮询，"立即巡检"无需等待完整休眠周期；重下载请求在下一轮巡检命中时生效。
+- 安全边界：删除本地资产**不开放**，任何删除类指令都会被拒绝（含手工编辑 `commands.json` 注入）；资产编号只接受规范的 BV / av 编号，拒绝任意字符串与文件路径。
+- 后端测试从 141 例增加到 197 例，覆盖命令校验、幂等认领、审计留痕、失败回执与注入攻击防护。
+
+### v1.5.0 改进
 
 - 新增观看历史元数据同步：`sync_watch_history` 开启后把看过的视频记为本地观影档案（仅元数据，不下载视频本体），`max_history_days` 控制回溯窗口，增量轮次只追新记录。
 - 新增完整性巡检：`verify_integrity` 三档（off/light/full），light 校验文件非空与媒体容器签名，full 追加 ffmpeg 快速解码探测；每轮抽样最多 20 个资产，损坏只标记不删除。
@@ -351,6 +382,7 @@ cd webui && npm ci && npm run lint && npm run build
 - [x] **组件环境检查**：按策略检查 `yt-dlp`，自动更新前验证官方 SHA256；FFmpeg 只检查系统 PATH 或配置路径，不自动下载更新。
 - [x] **Docker 容器化**：提供包含 FFmpeg 与 Python 运行环境的镜像及 `docker-compose.yml` 部署方案。
 - [x] **WebUI 管理面板**：提供概览、资产浏览和白名单设置页面；数据库只读，远程监听必须配置 Token。
+- [x] **WebUI 可操作化**：「操作」视图可触发即时巡检、重下单个资产、提示重启核心；本地文件命令通道 + 执行回执审计，删除本地资产始终不开放。
 - [x] **智能路径管理**：跨平台安全的路径名非法字符过滤与防爆长路径自动截断机制。
 - [x] **全量同步关注UP主**：`followings.mode` 支持 `all`（全部关注）/ `list`（指定 UID），失效投稿自动进入墓碑与孤本保护；取关后本地资产保留。
 - [x] **观看历史元数据**：`sync_watch_history` 把看过的视频记录为本地观影档案（仅元数据，不下载本体），支持 `max_history_days` 窗口。
@@ -358,9 +390,10 @@ cd webui && npm ci && npm run lint && npm run build
 - [x] **跨平台打包**：提供 PyInstaller 打包配置 `build.spec`（核心引擎单目录分发，Windows 实测通过）。
 
 ### 🟡 扩展功能 (规划中/开发中)
-- [ ] **播放列表同步**：支持同步“稍后再看”列表及历史观看记录。
 - [ ] **AI 内容摘要**：接入大模型，在下载完成后自动分析视频/专栏内容，并在 NFO 中追加 AI 内容摘要。
 - [ ] **弹幕词云图**：基于下载的弹幕文件，自动生成并保存弹幕词云图作为媒体库的海报/背景图。
+- [ ] **UP 主图文投稿同步**：把 `followings` 源从仅视频投稿扩展到图文（专栏）投稿。
+- [ ] **文档与社区基建**：ISSUE 模板、CONTRIBUTING 指南与 README 英文版。
 
 ---
 

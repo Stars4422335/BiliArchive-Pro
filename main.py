@@ -27,6 +27,14 @@ from app.core.integrity import IntegrityVerifier
 from app.core.parser import SyncFetchError
 from app.core.path_manager import PathManager
 from app.core.runtime_state import RuntimeStateWriter, runtime_state_path
+from app.core.commands import (
+    COMMAND_REDOWNLOAD_ASSET,
+    COMMAND_RESTART,
+    COMMAND_TRIGGER_SCAN,
+    CommandError,
+    CommandNotFound,
+    open_channel,
+)
 from app.scheduler.scanner import FavScanner
 from app.scheduler.updater import ComponentUpdater
 
@@ -47,6 +55,105 @@ def load_config():
 def _update_runtime(runtime, **changes):
     if runtime is not None:
         runtime.update(**changes)
+
+
+# 命令通道轮询间隔（秒）。休眠期用分片睡眠，保证 trigger_scan 能及时唤醒。
+COMMAND_POLL_INTERVAL = 5.0
+
+
+class RestartRequested(Exception):
+    """由 WebUI 的 restart 命令触发，提示运维层重启进程。"""
+
+
+async def _dispatch_commands(channel, scanner, runtime, pending_scan=None):
+    """消费一轮命令，返回是否请求退出守护循环。
+
+    所有命令都在 try/except 中执行并回执，单条失败不会中断扫描循环。
+    """
+    if channel is None:
+        return False
+    try:
+        commands = channel.take_pending()
+    except Exception as exc:
+        print(f"[!] 命令通道读取失败，本轮跳过: {exc}")
+        return False
+
+    for command in commands:
+        name = command.get("command")
+        payload = command.get("payload") or {}
+        try:
+            if name == COMMAND_TRIGGER_SCAN:
+                _update_runtime(
+                    runtime,
+                    message="已收到 WebUI 触发的即时扫描指令",
+                )
+                print("[*] 已收到即时扫描指令。")
+                channel.complete(command, ok=True, result="已排入当前巡检轮次")
+                # 置位事件：若当前正处于休眠分片，则提前唤醒开始下一轮；
+                # 若正处于扫描中，本轮结束后的休眠检查会立即消费该事件。
+                if pending_scan is not None:
+                    pending_scan.set()
+                # 必须继续处理本批剩余命令：它们已被 claim，若不回执会永远
+                # 停留在 running 状态而无法被审计或重试。
+                continue
+            if name == COMMAND_REDOWNLOAD_ASSET:
+                asset_id = payload.get("asset_id")
+                if not asset_id:
+                    raise CommandError("redownload_asset 缺少 asset_id")
+                keys = scanner.request_redownload(asset_id)
+                if not keys:
+                    raise CommandError("无效的 asset_id")
+                print(f"[*] 已登记重下载请求: {asset_id}（将在下一轮巡检命中）")
+                channel.complete(
+                    command,
+                    ok=True,
+                    result=f"已登记 {asset_id}，下轮巡检命中时重下",
+                )
+                continue
+            if name == COMMAND_RESTART:
+                # 不在守护进程内自重启，避免半途中断下载；交由运维层处理。
+                _update_runtime(
+                    runtime,
+                    status="restart_requested",
+                    message="已收到重启指令，请在完成当前轮次后重启核心进程",
+                )
+                print("[!] 已收到重启指令：请在当前轮次结束后重启核心进程。")
+                channel.complete(command, ok=True, result="已提示运维层重启核心进程")
+                return True
+            raise CommandError(f"不支持的命令: {name}")
+        except CommandError as exc:
+            print(f"[-] 命令执行失败: {exc}")
+            channel.complete(command, ok=False, result=str(exc))
+        except Exception as exc:
+            print(f"[-] 命令执行异常: {type(exc).__name__}: {exc}")
+            channel.complete(command, ok=False, result=f"{type(exc).__name__}: {exc}"[:200])
+    return False
+
+
+def _loop_time():
+    """当前事件循环的单调时钟；抽成函数便于测试注入确定性时钟。"""
+    return asyncio.get_event_loop().time()
+
+
+async def _sleep_until_next_scan(channel, scanner, runtime, scan_interval, pending_scan):
+    """分片休眠：期间持续消费命令，trigger_scan 可提前唤醒。
+
+    返回 True 表示被 trigger_scan 唤醒，应立即开始下一轮巡检。
+    """
+    deadline = _loop_time() + max(0.0, float(scan_interval))
+    while True:
+        remaining = deadline - _loop_time()
+        if remaining <= 0:
+            return False
+        should_exit = await _dispatch_commands(channel, scanner, runtime, pending_scan)
+        if should_exit:
+            raise RestartRequested
+        if pending_scan.is_set():
+            pending_scan.clear()
+            print("[*] 提前结束休眠，立即开始下一轮巡检。")
+            return True
+        await asyncio.sleep(min(COMMAND_POLL_INTERVAL, remaining))
+
 
 async def check_cookie(cookie_path):
     """验证登录凭证健康度"""
@@ -129,6 +236,17 @@ async def daemon_loop(config, cred, uid):
             next_scan_at=None,
         )
         raise
+    except RestartRequested:
+        # restart 命令是"提示运维层重启"而非自杀重启：安全退出循环并
+        # 关闭数据库，让 systemd / Docker / supervisor 按自己的策略拉起。
+        _update_runtime(
+            runtime,
+            status="stopped",
+            phase="restart_requested",
+            message="已响应重启指令，核心引擎安全退出，请由运维层重新拉起",
+            next_scan_at=None,
+        )
+        print("[*] 已响应重启指令，核心引擎安全退出（数据库已关闭）。")
     except Exception as exc:
         _update_runtime(
             runtime,
@@ -156,6 +274,14 @@ async def _run_scan_loop(config, cred, uid, db, runtime=None):
     scanner = FavScanner(config, cred, db, path_mgr, uid=uid)
     if runtime is not None and hasattr(scanner, "set_progress_callback"):
         scanner.set_progress_callback(runtime.update)
+
+    # 命令通道：WebUI 写入 commands.json，守护循环轮询消费。
+    try:
+        channel = open_channel(config)
+    except CommandNotFound as exc:
+        print(f"[*] 命令通道不可用，WebUI 将无法下发指令: {exc}")
+        channel = None
+    pending_scan = asyncio.Event()
 
     # 从配置文件读取收藏夹列表
     target_favs = config.get('favorites', [])
@@ -201,6 +327,8 @@ async def _run_scan_loop(config, cred, uid, db, runtime=None):
         print(f"[*] 使用配置文件中指定的 {len(target_favs)} 个收藏夹")
 
     while True:
+        # 轮次开始前消费命令：让 redownload_asset 在本轮巡检即命中
+        await _dispatch_commands(channel, scanner, runtime, pending_scan)
         _update_runtime(
             runtime,
             status="scanning",
@@ -436,7 +564,14 @@ async def _run_scan_loop(config, cred, uid, db, runtime=None):
                 downloaded_count=scanner.global_download_count,
                 message=runtime_message,
             )
-        await asyncio.sleep(scan_interval)
+        # 分片休眠：期间持续轮询命令，trigger_scan 可提前唤醒
+        await _sleep_until_next_scan(
+            channel,
+            scanner,
+            runtime,
+            scan_interval,
+            pending_scan,
+        )
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="BiliArchive-Pro 启动器")

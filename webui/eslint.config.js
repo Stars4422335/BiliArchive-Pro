@@ -21,6 +21,8 @@ export default [
         Headers: "readonly",
         URL: "readonly",
         URLSearchParams: "readonly",
+        setInterval: "readonly",
+        clearInterval: "readonly",
         process: "readonly",
       },
       parserOptions: {

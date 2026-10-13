@@ -1,6 +1,64 @@
 BiliArchive-Pro 进度记录
 ========================
 
+## 2026-10-13 - Task: M3-F5 WebUI 可操作化（commands.json 命令通道，已完成）
+
+### What was done:
+背景：计划书 P4 问题——WebUI 纯只读，触发扫描/重下载/看日志必须 SSH。
+决策：用户选定"只做可操作化"，不并行做只读增强（统计图表等），
+理由是可操作化解决真实运维痛点且信号比最高，图表类需求可后续按需单开一轮。
+
+后端：
+- 新模块 app/core/commands.py：命令通道。commands.json 与数据库同目录（与 runtime.json 同构）。
+  * WebUI 只原子追加，核心只认领+回执；每次写入前重读文件，保证并发追加不丢命令
+  * take_pending() 先标记 running 再返回 → 守护进程崩溃也不会重复执行（幂等认领）
+  * 队列上限 32，审计历史上限 50；note/回执统一截断单行 200 字符（防审计日志注入）
+  * asset_id 只接受 BV/av 正则白名单：拒绝任意字符串与文件路径（防路径穿越）
+  * FORBIDDEN_COMMANDS 硬编码删除类指令名，双层拒绝
+- main.py：
+  * _dispatch_commands()：消费命令并逐条回执，单条失败不影响其余命令与扫描循环
+  * _sleep_until_next_scan()：休眠由 asyncio.sleep(interval) 改为 5 秒分片轮询，
+    trigger_scan 最多 5 秒内唤醒（新增 _loop_time() 注入点便于测试确定性时钟）
+  * 轮次开始前额外消费一次命令，让 redownload_asset 在本轮巡检即命中
+  * restart 抛 RestartRequested → daemon_loop 捕获后安全退出并关闭数据库，
+    由 systemd/Docker 拉起（不做自杀式重启，避免中断正在进行的下载）
+- app/scheduler/scanner.py：
+  * request_redownload()：BV 与 av 双向归一登记（bvid2aid/aid2bvid）
+  * _should_skip_archived_video()：接管四条扫描管线（收藏夹/稍后再看/关注/合集）
+    的"已在库中跳过"判定，命中重下白名单时当轮豁免且一次性消费
+- app/webui：service.py 加 command_channel/submit_command/command_status；
+  app.py 加 GET/POST /api/commands 与 GET /api/commands/{id}，沿用 Bearer Token 中间件，
+  数据库为 :memory: 时返回 503
+
+前端：
+- webui/src/views/OperationsView.jsx：新增「操作」视图（导航加 Terminal 图标项）
+  * 三张操作卡：立即巡检 / 提示重启（二次确认）/ 重下单个资产（输入 BV+av 校验+二次确认）
+  * 待处理队列 + 执行审计双区展示；有待处理命令时 3 秒轻量轮询直到回执完成
+- eslint.config.js 补 setInterval/clearInterval 全局白名单（项目用显式 globals 模式）
+- styles.css 补 command-card/command-list/button-warning/state-success 等样式
+
+### Testing:
+- 新增 tests/test_commands.py 46 例：路径解析、队列语义、幂等认领、审计留痕、
+  载荷校验、注入防护、scanner 豁免一次性消费、守护分发回执
+- tests/test_webui_api.py 新增 10 例：入队、状态查询、Token 鉴权、危险命令拒绝、
+  路径穿越拒绝、:memory: 返回 503
+- 全量回归 197 passed（141 旧 + 56 新）
+- 端到端联调脚本 .mimosa/verify_command_channel.py：20/20 通过
+  （真实走 FastAPI → commands.json → 核心 take_pending/complete → HTTP 回读）
+- 前端 npm run lint 无告警；npm run build 1585 模块 / 194.7KB JS 通过
+- compileall 通过
+
+### Notes:
+- 过程中发现并修复两个真实 bug（均由测试暴露）：
+  1. trigger_scan 分支原本提前 return，导致同批其余命令已被 claim 却永不回执，
+     永远卡在 running 无法审计 → 改为 continue 处理完整批
+  2. bvid2aid 对畸形输入抛 IndexError 而非 ValueError，未被捕获 → 补充捕获
+- test_main_runtime.py 的休眠测试原本断言 slept == [7]，是断言旧实现细节；
+  已改为验证"总时长等于配置值 + 每片不超过轮询间隔"，保留原意图并适配新语义。
+- 通道不设开关：与 runtime.json 同构，天然属 loopback+Token 管理面，且无删除能力。
+- Docker 用户注意：restart 会让核心容器退出，未配 restart policy 需手动拉起。
+- M3-F5 完成。M3 剩 F4 跨平台 release 矩阵 + F6 文档社区基建；M4 亮点功能待排期。
+
 ## 2026-10-10 - Task: M2-F2 观看历史元数据同步 + M2-F3 完整性巡检（已完成）
 
 ### What was done:
