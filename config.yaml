@@ -53,6 +53,12 @@ components:
     strategy: "notify"
     path: "./bin/ffmpeg"
 
+wordcloud:
+  # 弹幕词云：下载完成后基于同目录的 .danmaku.xml 生成 .wordcloud.svg
+  # 纯本地计算，不外发任何数据；生成失败不影响视频下载与 NFO 写入
+  enabled: false
+  max_terms: 60               # 词云最多展示的词数
+
 archive_protection:
   mark_deleted_prefix: "[源端已删]"  # 本地存在但 B 站已删的保护前缀
   tombstone_prefix: "[失效墓碑]"     # 本地不存在且 B 站已删的占位前缀

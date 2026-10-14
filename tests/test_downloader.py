@@ -23,6 +23,13 @@ def make_config(min_disk_gb):
     }
 
 
+def _bare_downloader(config=None):
+    """只带 config 的 Downloader 实例，用于测不需要下载器的纯文件处理路径。"""
+    instance = Downloader.__new__(Downloader)
+    instance.config = config or {"system": {}}
+    return instance
+
+
 def test_download_video_skips_ytdlp_when_free_disk_below_threshold(monkeypatch, tmp_path):
     downloader = Downloader(make_config(min_disk_gb=5))
     calls = []
@@ -549,7 +556,7 @@ def test_danmaku_conversion_only_processes_current_download_prefix(monkeypatch, 
         lambda source, target: calls.append((source, target)) or True,
     )
 
-    Downloader._convert_downloaded_danmaku(str(media_dir), "video [BV1]")
+    Downloader._convert_downloaded_danmaku(_bare_downloader(), str(media_dir), "video [BV1]")
 
     assert calls == [
         (str(current), str(media_dir / "video [BV1].danmaku.ass"))
@@ -565,7 +572,7 @@ def test_danmaku_conversion_exception_does_not_escape(monkeypatch, tmp_path, cap
         lambda source, target: (_ for _ in ()).throw(OverflowError("bad time")),
     )
 
-    Downloader._convert_downloaded_danmaku(str(tmp_path), "video [BV1]")
+    Downloader._convert_downloaded_danmaku(_bare_downloader(), str(tmp_path), "video [BV1]")
 
     assert current.exists()
     assert "已保留原 XML" in capsys.readouterr().out

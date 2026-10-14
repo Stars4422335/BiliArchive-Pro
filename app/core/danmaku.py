@@ -73,7 +73,12 @@ class DanmakuConverter:
         return None
 
     @staticmethod
-    def _parse_comment(element):
+    def parse_comment(element):
+        """解析单条弹幕为结构化记录，非法条目返回 None。
+
+        公开给词云等下游消费者复用，保证它们看到的弹幕集合与
+        ASS 转换完全一致（同样的时间戳、类型、文本校验）。
+        """
         parameters = element.get("p")
         if not parameters or element.text is None:
             return None
@@ -151,7 +156,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         comments = []
         for element in root.findall("d"):
-            comment = DanmakuConverter._parse_comment(element)
+            comment = DanmakuConverter.parse_comment(element)
             if comment:
                 comments.append(comment)
         comments.sort(key=lambda comment: comment["start"])

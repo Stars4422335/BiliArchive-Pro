@@ -4,6 +4,18 @@
 
 ## [Unreleased]
 
+### 弹幕词云（README TODO #5）
+
+- 新增 `system` 无关的独立配置块 `wordcloud`：`enabled`（默认 `false`）+ `max_terms`（默认 60）。
+- 开启后，视频下载完成时基于同目录 `.danmaku.xml` 生成 `.wordcloud.svg` 侧车，文件名沿用 ASS 侧车习惯（`X.danmaku.xml` → `X.danmaku.wordcloud.svg`）。
+- **零新依赖**：不引入 wordcloud / jieba / matplotlib，SVG 由标准库拼装，规避位图字体在 Windows / macOS / Linux 上的渲染差异。
+- **中文按字符二元组切分**而非词典分词：弹幕是极短高频口语，jieba 需要词典与模型文件，对这类噪声文本收益有限；二元组能自然捕获「前排」「泪目」「gg」等模式，且完全确定、无外部资源。
+- 弹幕统计复用 `DanmakuConverter.parse_comment`（由私有 `_parse_comment` 提升为公开 API），保证词云与 ASS 转换看到完全同一批弹幕。
+- 过滤应答类噪声（「哈哈哈」「awsl」「2333」）与虚词，同时**保留「前排」「打卡」等高频但有语义的词**——它们恰是词云最有价值的部分。
+- **只生成不阻断**：词云是衍生品，XML 损坏、词数不足、渲染异常等任何失败都只打印提示，不影响视频下载与 NFO 写入的成功判定。
+- SVG 内容来自用户可见弹幕文本，全部经 XML 转义，`<script>` 一类内容无法注入标签。
+- 布局使用固定随机种子，同一份弹幕重复生成得到同样版式，便于回归比对。
+
 ### 跨平台自动发版
 
 - 新增 `.github/workflows/release.yml`：推送 `vX.Y.Z` 标签即自动产出三平台免 Python 环境分发包与源码 ZIP，无需手工执行发版步骤。

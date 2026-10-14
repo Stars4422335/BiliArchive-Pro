@@ -125,6 +125,10 @@ components:
   yt-dlp:
     strategy: "auto"                 # update after checksum; notify only; or off
 
+wordcloud:
+  enabled: false                    # danmaku word cloud: generates .wordcloud.svg from the local .danmaku.xml
+  max_terms: 60                     # maximum number of words rendered
+
 sync_collections:
   # mid is the owning creator's UID, id is the collection/series ID
   # - id: 67890
@@ -195,6 +199,15 @@ Media library output rules:
 - Results are stored in the database column `integrity_status` (`0` unchecked / `1` passed / `2` corrupt) and visible on the WebUI asset page.
 - **Marks only, never deletes**: corrupt files (including orphans) are kept and flagged; whether to re-download is your decision, based on whether the upstream source still exists.
 - `full` requires FFmpeg. If it is missing, that check is marked as failed without interrupting the scan.
+
+**Danmaku word cloud (`wordcloud.enabled`)**
+
+- When enabled, a `.wordcloud.svg` sidecar is generated from the local `.danmaku.xml` after a video finishes downloading, following the same naming convention as the ASS sidecar.
+- **Entirely local, nothing leaves your machine**, and no new dependencies are introduced (the SVG is assembled with the standard library).
+- Chinese is split into **character bigrams** rather than dictionary tokens. Danmaku are extremely short and high-frequency, so bigrams naturally capture patterns like 「前排」and 「泪目」 while staying fully deterministic and free of external dictionaries.
+- Filler responses (`哈哈哈`, `awsl`) and function words are filtered out, while **high-frequency but meaningful words like 「前排」and 「打卡」are kept** — those are exactly what makes a word cloud interesting.
+- **Generation only, never blocking**: corrupt XML, too few words, and rendering errors all just print a notice; video download and NFO writing are unaffected.
+- Disabled by default, in which case there is zero overhead and no extra files.
 
 ---
 
@@ -345,7 +358,7 @@ See [CHANGELOG.md](CHANGELOG.md) for v1.3.0 and below (WebUI introduction, Plex 
 
 ### 🟡 Planned
 - [ ] **AI summaries**: optional LLM-generated summaries written into NFO `<outline>`
-- [ ] **Danmaku word clouds**: locally generated word clouds saved as library artwork
+- [x] **Danmaku word clouds**: `wordcloud.enabled` generates a `.wordcloud.svg` sidecar from the same `.danmaku.xml`, with no new dependencies and fully local computation; failures never affect downloads.
 - [ ] **Article submissions for followed creators**: extend `followings` beyond video submissions
 
 ---

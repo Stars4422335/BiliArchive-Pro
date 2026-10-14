@@ -11,6 +11,7 @@ import time
 from urllib.parse import urlparse
 from app.core.danmaku import DanmakuConverter
 from app.core.secure_file import atomic_write_text
+from app.core.wordcloud import DanmakuWordCloud
 
 IS_WINDOWS = os.name == "nt"
 
@@ -204,8 +205,7 @@ class Downloader:
         print(f"[*] 风控保护：随机休眠 {delay:.1f} 秒...")
         time.sleep(delay)
 
-    @staticmethod
-    def _convert_downloaded_danmaku(save_dir, file_name):
+    def _convert_downloaded_danmaku(self, save_dir, file_name):
         """只转换当前下载任务生成的 .danmaku.xml，避免扫描其他资产。"""
         prefix = f"{file_name}."
         try:
@@ -233,6 +233,28 @@ class Downloader:
                 continue
             if converted:
                 print(f"[+成功] 弹幕转换完成: {os.path.basename(ass_path)}")
+            # 词云是衍生品：失败只提示，不影响下载与 NFO 的成功判定
+            self._generate_wordcloud(xml_sub)
+
+    def _generate_wordcloud(self, xml_path):
+        """按配置生成弹幕词云。默认关闭，失败不影响主流程。"""
+        wordcloud_config = self.config.get("wordcloud", {}) or {}
+        if not wordcloud_config.get("enabled", False):
+            return False
+        try:
+            max_terms = int(wordcloud_config.get("max_terms", 60) or 60)
+        except (TypeError, ValueError):
+            max_terms = 60
+        svg_path = os.fspath(xml_path).rsplit('.', 1)[0] + ".wordcloud.svg"
+        print(f"[*] 正在生成弹幕词云: {os.path.basename(svg_path)}...")
+        try:
+            generated = DanmakuWordCloud(max_terms=max_terms).generate(xml_path, svg_path)
+        except Exception as exc:
+            print(f"[-] 词云生成异常，已跳过: {exc}")
+            return False
+        if generated:
+            print(f"[+成功] 词云生成完成: {os.path.basename(svg_path)}")
+        return generated
 
     def has_enough_disk_space(self, save_dir):
         min_disk_gb = self.config.get('system', {}).get('min_disk_gb', 0)

@@ -1,6 +1,55 @@
 BiliArchive-Pro 进度记录
 ========================
 
+## 2026-10-14 - Task: M4 弹幕词云（README TODO #5，已完成）
+
+### What was done:
+- 新增 app/core/wordcloud.py：DanmakuWordCloud 类
+  * extract_terms()：解析 .danmaku.xml，按词频降序返回高频词
+  * tokenize()：中文取字符二元组 + 保留整串；英文/数字串整体保留
+  * render_svg()：拼装 SVG，权重按排名平方衰减（头部词显著更大）
+  * generate()：编排，失败一律返回 False 不抛异常
+- danmaku.py：_parse_comment 提升为公开 parse_comment，供词云复用，
+  保证词云与 ASS 转换看到完全同一批弹幕
+- downloader.py：_convert_downloaded_danmaku 由 staticmethod 改为实例方法
+  （需要 self.config 读 wordcloud 配置），转换后顺带触发词云生成
+- config.yaml：新增 wordcloud 块（enabled 默认 false / max_terms 默认 60）
+
+### 设计决策（与计划书原方案的差异）:
+- **零新依赖**：放弃 wordcloud + jieba + matplotlib。理由：
+  ① jieba 需词典/模型文件，对弹幕这种噪声文本收益有限；
+  ② matplotlib 在 build.spec 里被显式排除，引入会与打包配置冲突；
+  ③ 位图字体在三平台渲染不一致，SVG 无此问题且体积仅几十 KB
+- **bigram 而非词典分词**：弹幕是极短高频口语，二元组能自然捕获
+  「前排」「泪目」「gg」等模式，完全确定、无外部资源、单测可断言
+- **只生成不阻断**：XML 损坏/词数不足/渲染异常/max_terms 非法均降级为提示，
+  不影响视频下载与 NFO 写入的完成状态判定（与孤本保护精神一致）
+- **不生成 PNG/JPG**：原计划存为 poster.jpg 备选风格或 fanart.jpg，
+  但那会与 Plex/Jellyfin 标准封面冲突。SVG 侧车不覆盖任何既有文件
+
+### Testing:
+- 新增 tests/test_wordcloud.py 31 例，覆盖三类风险：
+  ① 分词噪声（应答词/纯符号/单字/ASCII 切分/去重/上限）
+  ② 失败语义（损坏 XML/词数不足/生成器内部抛异常均不外泄）
+  ③ 输出安全（SVG 对 < > & " 做 XML 转义，无法注入标签）
+  ④ 确定性（固定种子，同输入同输出）
+  ⑤ downloader 集成（关闭时不生成/开启时生成/转换后顺带触发）
+- 全量 228 passed（197 + 31）
+- 修正 process：_convert_downloaded_danmaku 改实例方法后，
+  test_downloader.py 里两处类调用需改 _bare_downloader() 辅助
+
+### Notes:
+- 实现过程中修正了自己写出的 3 个真实缺陷（均由新测试暴露）:
+  1. _generate_wordcloud 用 xml_path.rsplit()，传 Path 对象直接
+     AttributeError——补 os.fspath() 转换
+  2. tokenize 先删标点空格再切词，导致 "GPU FOMO" 被粘成 "gpufomo"
+     ——改为先按空白切块再逐块处理
+  3. 噪声词表把「前排」「打卡」当噪声滤掉，但它们高频且有语义，
+     恰是词云最有价值的部分——移出噪声表，并补测试锁定该行为
+- 遗留：WebUI 无词云浏览入口（当前只能直接看文件）；未做 PNG 导出
+- 下一步：M4 剩余——AI 内容摘要（涉及内容外发隐私，需先定 API 选型）、
+  性能治理（万级资产分页优化 / SQLite WAL）
+
 ## 2026-10-14 - Task: M3-F4 跨平台自动发版流水线（已完成）
 
 ### What was done:
