@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全漏洞报告（私有）
+    url: https://github.com/Stars4422335/BiliArchive-Pro/security/advisories/new
+    about: 凭据泄露、路径穿越等安全问题请勿提交公开 Issue
+  - name: 版本更新与变更记录
+    url: https://github.com/Stars4422335/BiliArchive-Pro/releases
+    about: 查看已发布版本与完整变更说明

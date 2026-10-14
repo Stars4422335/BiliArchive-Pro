@@ -6,6 +6,8 @@
 [![Release: v1.6.0](https://img.shields.io/badge/release-v1.6.0-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.6.0)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 
+**简体中文** | [English](README.en.md)
+
 **BiliArchive-Pro** 旨在为 B 站深度用户提供一套稳定、安全且符合影视库管理规范（如 Plex、Jellyfin、Emby）的本地自动化备份方案。它不仅是一个支持最高 4K/HDR 画质的下载器，更是一个智能的**个人数字图书馆管理员**。
 
 无论是防备 UP 主删稿、视频失效，还是希望将 B 站的优质视频、专栏图文永久纳入自己的私人 NAS 影视库，BiliArchive-Pro 都能为你提供“开箱即用”且“一劳永逸”的守护。
@@ -393,13 +395,19 @@ cd webui && npm ci && npm run lint && npm run build
 - [ ] **AI 内容摘要**：接入大模型，在下载完成后自动分析视频/专栏内容，并在 NFO 中追加 AI 内容摘要。
 - [ ] **弹幕词云图**：基于下载的弹幕文件，自动生成并保存弹幕词云图作为媒体库的海报/背景图。
 - [ ] **UP 主图文投稿同步**：把 `followings` 源从仅视频投稿扩展到图文（专栏）投稿。
-- [ ] **文档与社区基建**：ISSUE 模板、CONTRIBUTING 指南与 README 英文版。
+- [ ] **跨平台 release 矩阵**：CI 增加 win/mac/linux 打包作业，产物附 SHA256 上传 Release。
 
 ---
 
 ## 🤝 参与贡献
 
-欢迎任何形式的贡献！如果你有更好的想法，或者发现了 Bug，欢迎提交 Pull Request 或开 Issue 讨论。
+欢迎任何形式的贡献。开始之前请先阅读 **[CONTRIBUTING.md](CONTRIBUTING.md)**，里面写清了本地验证命令、测试要求，以及一条不可逾越的架构边界：**不得引入任何自动删除本地资产的路径**。
+
+- 提交 Bug 与功能建议：使用 [Issue 模板](.github/ISSUE_TEMPLATE)
+- 提交代码改动：PR 会自动套用[贡献清单](.github/pull_request_template.md)
+- **安全问题请勿提交公开 Issue**，改用[私有漏洞报告](https://github.com/Stars4422335/BiliArchive-Pro/security/advisories/new)，详见 [SECURITY.md](SECURITY.md)
+
+英文文档见 [README.en.md](README.en.md)。
 
 ## 📄 许可证
 
