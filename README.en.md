@@ -131,6 +131,11 @@ wordcloud:
   enabled: false                    # danmaku word cloud: generates .wordcloud.svg from the local .danmaku.xml
   max_terms: 60                     # maximum number of words rendered
 
+summary:
+  enabled: false                    # content summary: extractive, written to NFO <outline> (Plex plot outline)
+  mode: "local"                     # local = extractive summary; llm is not implemented (it would upload subtitles)
+  max_chars: 220                    # maximum summary length in characters
+
 sync_collections:
   # mid is the owning creator's UID, id is the collection/series ID
   # - id: 67890
@@ -219,6 +224,15 @@ Media library output rules:
 - `db_wal: true` enables SQLite WAL, so writes are no longer blocked by concurrent WebUI reads (measured 5.5s down to 15ms).
 - **Off by default** because WAL needs to create `-wal` and `-shm` files next to the database, which fails on read-only mounts and some network shares. If it cannot be enabled, the program silently falls back to the default journal mode and prints a notice; nothing breaks.
 - Verified that read-only WebUI connections (`mode=ro`) work correctly under WAL, including reads while a write transaction is in flight.
+
+**Content summary (`summary.enabled`)**
+
+- When enabled, an extractive summary is generated from the **subtitle text** and written to the NFO `<outline>` element — Plex's plot outline field, shown on the media library detail page.
+- **Entirely local; subtitles are never uploaded**, and no external dependency is introduced.
+- Chinese subtitles are preferred (`.zh-Hans.srt/.vtt/.ass`), falling back to the video description; only the current media's own subtitles are read.
+- Videos with fewer than two sentences are skipped, filler like "一键三连" is filtered out, and multi-part videos get a single summary.
+- `mode: "llm"` reserves a slot for external API integration but is **not implemented** — uploading subtitle text conflicts with this project's asset-protection stance. Selecting it fails loudly and skips, never silently behaving as local.
+- Any failure (too little content, missing subtitles, internal error) only prints a notice; downloads and NFO writing are unaffected.
 
 ---
 
@@ -369,8 +383,8 @@ See [CHANGELOG.md](CHANGELOG.md) for v1.3.0 and below (WebUI introduction, Plex 
 
 ### 🟡 Planned
 - [x] **Danmaku word clouds**: `wordcloud.enabled` generates a `.wordcloud.svg` sidecar from the same `.danmaku.xml`, with no new dependencies and fully local computation; failures never affect downloads.
+- [x] **Content summaries**: `summary.enabled` generates an extractive summary from subtitles into NFO `<outline>`, fully local with no subtitle upload; `mode: llm` is reserved but explicitly refused for privacy reasons.
 - [x] **Database performance**: indexes matched to real queries plus expression-free WebUI sorting; `db_wal` optionally enables WAL. With 20k assets the WebUI list went 9.5ms→0.11ms and counting 8.1ms→0.7ms.
-- [ ] **AI summaries**: optional LLM-generated summaries written into NFO `<outline>`
 
 ---
 

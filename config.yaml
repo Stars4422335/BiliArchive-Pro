@@ -65,6 +65,13 @@ wordcloud:
   enabled: false
   max_terms: 60               # 词云最多展示的词数
 
+summary:
+  # 内容摘要：从字幕文本抽取式生成，写入 NFO 的 <outline> 字段（Plex 情节摘要）
+  # 纯本地计算，字幕文本不会外发；失败不影响下载与 NFO 写入
+  enabled: false
+  mode: "local"               # local = 本地抽取式；llm 尚未实现（会外发字幕文本）
+  max_chars: 220              # 摘要最大字数
+
 archive_protection:
   mark_deleted_prefix: "[源端已删]"  # 本地存在但 B 站已删的保护前缀
   tombstone_prefix: "[失效墓碑]"     # 本地不存在且 B 站已删的占位前缀

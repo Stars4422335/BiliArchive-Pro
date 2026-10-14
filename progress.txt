@@ -1,6 +1,41 @@
 BiliArchive-Pro 进度记录
 ========================
 
+## 2026-10-14 - Task: M4 内容摘要（README TODO #4，本地版，已完成）
+
+### What was done:
+决策处理：⟦决策点 7⟧（AI 摘要涉及字幕外发）尚未拍板，因此**先做不依赖该决策
+的部分**——LLM 只负责"怎么生成摘要"，而"摘要写进 NFO <outline>"这条通路
+与生成方无关，先把它落地。
+- app/core/summary.py（新增）：LocalSummarizer，TF-IDF 句子相似度图 +
+  幂迭代的抽取式摘要。中文取二元组分词（无词典依赖），与弹幕词云同源思路
+- app/core/metadata.py：_add_common_fields 新增可选 <outline> 字段
+  （Plex 情节摘要）。未提供时不写该元素，既有 NFO 输出逐字节不变
+- app/scheduler/scanner.py：
+  * _attach_outline()：按配置生成摘要，写入 item["outline"]
+  * _read_subtitle_text()：读当前媒体的中文字幕，严格按文件名前缀隔离
+  * 单P 与多P 路径的 NFO 生成前注入；多P 只生成一份
+- config.yaml 新增 summary 块（enabled 默认 false / mode / max_chars）
+
+### Testing:
+- 新增 tests/test_summary.py 25 例
+- 全量 284 passed（259 + 25）
+
+### Notes:
+**LLM 接入的处理方式**：summary.mode 预留 "llm"，但填入会明确报错并跳过，
+而不是静默当作 local 处理。静默降级会让用户以为字幕已发送（或以为 AI
+摘要可用）而实际没有——这比明确失败危险得多。
+将来若确认接某家 API，只需实现满足 summarize(text) -> str | None 契约的类，
+_attach_outline 其余部分无需改动。
+
+**质量局限（已写入计划书，如实告知）**：抽取式摘要只是"挑选"原文中的
+代表性句子，不做改写或归纳。它给出"视频讲了什么"的骨架，但不是真正的
+"概括"。与 LLM 相比抽象层次低，但零隐私风险、零成本、零依赖。
+
+- 少于两句不做摘要：强行截取只是原文片段，不如让简介保持原样
+- 多P 只生成一份：各集字幕是分集内容，逐集生成会得到近乎重复的 outline
+- 字幕读取严格限定当前任务前缀，与弹幕转换的隔离策略一致
+
 ## 2026-10-14 - Task: M4 关注源图文（专栏）投稿同步（已完成）
 
 ### What was done:

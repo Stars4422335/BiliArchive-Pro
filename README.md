@@ -130,6 +130,11 @@ wordcloud:
   enabled: false                    # 弹幕词云：下载完成后基于同目录 .danmaku.xml 生成 .wordcloud.svg
   max_terms: 60                     # 词云最多展示的词数
 
+summary:
+  enabled: false                    # 内容摘要：从字幕抽取式生成，写入 NFO <outline>（Plex 情节摘要）
+  mode: "local"                     # local = 本地抽取式；llm 尚未实现（会外发字幕文本）
+  max_chars: 220                    # 摘要最大字数
+
 sync_collections:
   # mid 是合集所属 UP 主的 UID，id 是合集或系列 ID
   # - id: 67890
@@ -227,6 +232,15 @@ favorites:
 - `db_wal: true` 开启 SQLite WAL：写入不再被 WebUI 的并发读阻塞（实测 5.5 秒 → 15 毫秒）。
 - **默认关闭**：WAL 需要在数据库同目录创建 `-wal` / `-shm` 文件，只读挂载或部分网络盘会失败。启用失败时程序静默退回默认日志模式并打印提示，功能不受影响。
 - 已验证 WAL 模式下 WebUI 的只读连接（`mode=ro`）完全兼容，包括写事务进行中的读取。
+
+**内容摘要（`summary.enabled`）**
+
+- 开启后从**字幕文本**抽取式生成摘要，写入 NFO 的 `<outline>` 字段——这是 Plex 的情节摘要字段，会显示在媒体库详情页。
+- **纯本地计算，字幕文本不会外发到任何服务器**，也不引入外部依赖。
+- 优先读中文字幕（`.zh-Hans.srt/.vtt/.ass`），无字幕时退回视频简介；只读当前媒体自己的字幕，不碰同目录其他资产。
+- 少于两句话时不做摘要，「一键三连」「欢迎收看」等套话会被过滤；多P视频只生成一份摘要。
+- `mode: "llm"` 预留了外部 API 接入位，但**当前未实现**——外发字幕文本与本项目的资产保护取向冲突。填入该值会明确报错并跳过，不会静默当作本地处理。
+- 摘要失败（内容过短、字幕缺失、内部异常）只打印提示，不影响视频下载与 NFO 写入。
 
 
 ---
@@ -428,8 +442,8 @@ cd webui && npm ci && npm run lint && npm run build
 
 ### 🟡 扩展功能 (规划中/开发中)
 - [x] **弹幕词云**：`wordcloud.enabled` 基于同一份 `.danmaku.xml` 生成 `.wordcloud.svg` 侧车，零新依赖、纯本地计算，失败不影响下载。
+- [x] **内容摘要**：`summary.enabled` 从字幕抽取式生成摘要写入 NFO `<outline>`，纯本地计算、字幕不外发；`mode: llm` 预留但明确拒绝（涉及隐私）。
 - [x] **性能治理**：面向真实查询的索引 + WebUI 排序去表达式化；`db_wal` 可选开启 WAL。2 万资产实测 WebUI 列表 9.5ms→0.11ms、计数 8.1ms→0.7ms。
-- [ ] **AI 内容摘要**：接入大模型，在下载完成后自动分析视频/专栏内容，并在 NFO 中追加 AI 内容摘要。
 
 ---
 

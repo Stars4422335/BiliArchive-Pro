@@ -71,6 +71,12 @@ class MetadataGenerator:
 
         ET.SubElement(root, "plot").text = plot_text
 
+        # <outline>：Plex 的情节摘要字段。仅当调用方显式提供时才写，
+        # 保证既有 NFO 生成路径的输出完全不变。
+        outline = str(video_info.get("outline") or "").strip()
+        if outline:
+            ET.SubElement(root, "outline").text = outline
+
     @staticmethod
     def _write_nfo(root, nfo_path, base_dir=None):
         try:
