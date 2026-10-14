@@ -97,3 +97,16 @@ git archive --format=zip --prefix=BiliArchive-Pro-vX.Y.Z/ --output BiliArchive-P
 
 5. 审计 ZIP 文件列表，确认不包含 `config.local.yaml`、`data/`、`downloads/`、`bin/`、`venv/` 或本地任务记录。
 6. 计算 SHA256，使用 `CHANGELOG.md` 中对应版本内容作为 Release 说明，并上传 ZIP 与校验文件。
+
+### 自动化发版（v1.6.x 起）
+
+推送 `vX.Y.Z` 标签会触发 `.github/workflows/release.yml`，无需手工执行上述步骤：
+
+1. `source` 作业用 `git archive` 从标签生成源码 ZIP，并**审计条目**：一旦出现 `config.local.yaml`、`data/`、`downloads/`、`venv/` 或本地任务记录即失败。
+2. `build` 作业在三个**原生 runner** 上并行构建。PyInstaller 不能交叉编译，所以 Windows / macOS / Linux 各占一个 runner，而不是矩阵里可替换的维度。
+3. 每个平台依次执行：归档工具就绪 → PyInstaller 构建 → **`--version` 冒烟并与 `app/__init__.py` 比对版本号** → 关键依赖完整性检查（`yt_dlp` / `bilibili_api` / `defusedxml` / `uvicorn`）→ 打包 → SHA256 → 上传。
+4. 全部上传到**草稿 Release**，由 `publish` 作业在三个平台都成功后统一转为正式发布。任一平台失败则不会产生正式 Release。
+
+手工触发：对已有标签执行 `workflow_dispatch` 并填入 tag。
+
+> 冒烟验证是刻意加的：隐藏导入漏依赖或平台差异只会在真正运行时暴露，没有这一步就会把打不开的包发给用户。

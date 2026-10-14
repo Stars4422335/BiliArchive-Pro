@@ -1,0 +1,252 @@
+name: Release
+
+# 推送 vX.Y.Z 标签时构建三平台免 Python 环境分发包，并上传到该标签的 Release。
+#
+# PyInstaller 不能交叉编译：Windows 产物只能在 windows runner 上生成，
+# macOS 只能在 macos runner 上生成。因此三平台各一个作业，而不是矩阵里的可替换维度。
+#
+# 只打核心引擎（main.py）。login.py 需要终端二维码交互、web.py 需要前端
+# dist 构建产物，二者仍以源码方式运行，与 build.spec 的既有说明保持一致。
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "已存在的版本标签，例如 v1.6.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  # 源码 ZIP：与 v1.6.0 的手工流程一致，只用受跟踪内容生成。
+  source:
+    name: Source archive
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Ensure unzip
+        run: |
+          set -euo pipefail
+          if ! command -v unzip > /dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y unzip
+          fi
+
+      - name: Resolve tag
+        id: meta
+        run: |
+          TAG="${{ inputs.tag }}"
+          if [ -z "$TAG" ]; then TAG="${GITHUB_REF_NAME}"; fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Create source archive
+        id: archive
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.meta.outputs.tag }}"
+          git fetch --tags --force
+          # 只用受跟踪内容：凭据、数据库、本地配置与本地任务记录不会进入包
+          git archive --format=zip --prefix="BiliArchive-Pro-${TAG}/" \
+            --output "BiliArchive-Pro-${TAG}.zip" "$TAG"
+          # 审计：确认敏感路径一个都没被打进去
+          ENTRIES="$(unzip -Z1 "BiliArchive-Pro-${TAG}.zip")"
+          for forbidden in "config.local.yaml" "/data/" "/downloads/" "/venv/" "本地任务计划"; do
+            case "$ENTRIES" in
+              *"$forbidden"*) echo "发布包含敏感路径: $forbidden"; exit 1 ;;
+            esac
+          done
+          echo "条目数: $(printf '%s\n' "$ENTRIES" | wc -l)"
+          echo "source=$PWD/BiliArchive-Pro-${TAG}.zip" >> "$GITHUB_OUTPUT"
+
+      - name: Upload source archive
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          files: ${{ steps.archive.outputs.source }}
+          draft: true
+          prerelease: false
+
+  build:
+    name: Build (${{ matrix.label }})
+    needs: source
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      # 任一平台失败都应看到完整结果，而不是第一个失败就取消其余
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: windows-x64
+            archive: zip
+          - os: macos-latest
+            label: macos-arm64
+            archive: tar
+          - os: ubuntu-latest
+            label: linux-x64
+            archive: tar
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pyinstaller
+
+      # Windows runner 镜像不保证预装 zip/unzip
+      - name: Ensure archive tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v zip > /dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y zip unzip
+          fi
+          command -v zip > /dev/null || { echo "zip 不可用"; exit 1; }
+          command -v tar > /dev/null || { echo "tar 不可用"; exit 1; }
+          echo "归档工具就绪"
+
+      - name: Build with PyInstaller
+        run: python -m PyInstaller build.spec --noconfirm --clean
+
+      # 冒烟验证：能跑出 --version 才算产物可用。
+      # 这一步失败通常意味着 hiddenimports 漏了依赖或平台差异。
+      - name: Smoke test executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            BINARY="./dist/BiliArchive-Pro/BiliArchive-Pro.exe"
+          else
+            BINARY="./dist/BiliArchive-Pro/BiliArchive-Pro"
+            chmod +x "$BINARY"
+          fi
+          echo "--- version check ---"
+          VERSION="$("$BINARY" --version)"
+          echo "$VERSION"
+          # 版本号与仓库声明一致，防止打出一个标着旧版本的包。
+          # 用 python 读取而非 grep -P：macOS runner 的 BSD grep 不支持 -P。
+          EXPECTED="$(python -c "import app; print(app.__version__)")"
+          echo "expected: $EXPECTED"
+          case "$VERSION" in
+            *"$EXPECTED"*) echo "版本号一致" ;;
+            *) echo "版本号不一致：产物=$VERSION 期望=$EXPECTED"; exit 1 ;;
+          esac
+
+      # 目录完整性检查：单目录模式要求 dist/BiliArchive-Pro/ 整体交付，
+      # 少任何一个 _internal 文件都会让用户拿到坏包。
+      - name: Verify artifact completeness
+        shell: bash
+        run: |
+          set -euo pipefail
+          DIR="dist/BiliArchive-Pro"
+          test -d "$DIR" || { echo "产物目录缺失"; exit 1; }
+          echo "文件数: $(find "$DIR" -type f | wc -l)"
+          echo "体积: $(du -sh "$DIR" | cut -f1)"
+          # 关键运行时必须随包发出，缺一个用户拿到就是坏包。
+          # 用 -print -quit 而非 `| head -n 1`：pipefail 下 head 提前退出会
+          # 让 find 收到 SIGPIPE，整条管道被判失败。
+          for pattern in "yt_dlp" "bilibili_api" "defusedxml" "uvicorn"; do
+            if [ -z "$(find "$DIR" -iname "*${pattern}*" -print -quit)" ]; then
+              echo "缺少关键依赖: $pattern"; exit 1
+            fi
+          done
+          echo "关键依赖齐全"
+
+      - name: Package artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ needs.source.outputs.tag }}"
+          NAME="BiliArchive-Pro-${TAG}-${{ matrix.label }}"
+          # 随包附最小运行骨架，省去用户手工创建目录
+          for f in config.yaml LICENSE README.md; do
+            test -f "$f" || { echo "缺少 $f，无法打包"; exit 1; }
+          done
+          cp config.yaml LICENSE README.md dist/BiliArchive-Pro/
+          mkdir -p dist/BiliArchive-Pro/bin
+          printf '%s\n' \
+            "本包为单目录分发，整个目录缺一不可。" \
+            "1. 把 FFmpeg 放到同目录 bin/ 下（ffmpeg.exe 或 ffmpeg）。" \
+            "2. 运行 BiliArchive-Pro --cli 启动守护进程。" \
+            "3. 登录与 WebUI 请用源码方式，见 README。" \
+            > dist/BiliArchive-Pro/安装说明.txt
+          # 产物与后续 SHA256 步骤统一落在 dist/，避免工作目录错位
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            (cd dist && zip -r "${NAME}.zip" BiliArchive-Pro > /dev/null)
+          else
+            tar -C dist -czf "${NAME}.tar.gz" BiliArchive-Pro
+          fi
+          # 校验压缩包内容含可执行文件。
+          # grep -q 会提前退出并让上游收到 SIGPIPE，在 pipefail 下误判失败，
+          # 因此先把清单抓到变量里再判断。
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            LISTING="$(unzip -l "dist/${NAME}.zip")"
+          else
+            LISTING="$(tar -tzf "dist/${NAME}.tar.gz")"
+          fi
+          case "$LISTING" in
+            *BiliArchive-Pro*) echo "压缩包内容正常" ;;
+            *) echo "压缩包内容异常"; exit 1 ;;
+          esac
+          ls -lh dist/"${NAME}".*
+
+      - name: Generate SHA256
+        shell: bash
+        run: |
+          set -euo pipefail
+          NAME="BiliArchive-Pro-${{ needs.source.outputs.tag }}-${{ matrix.label }}"
+          cd dist
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            shasum -a 256 "${NAME}.zip" > "${NAME}.zip.sha256"
+          else
+            shasum -a 256 "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256"
+          fi
+          cat "${NAME}".*.sha256
+
+      - name: Upload to draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.source.outputs.tag }}
+          files: |
+            dist/BiliArchive-Pro-${{ needs.source.outputs.tag }}-${{ matrix.label }}.*
+          draft: true
+
+  publish:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Publish draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.source.outputs.tag }}
+          draft: false
+          prerelease: false

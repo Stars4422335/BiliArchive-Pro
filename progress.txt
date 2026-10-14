@@ -1,6 +1,95 @@
 BiliArchive-Pro 进度记录
 ========================
 
+## 2026-10-14 - Task: M3-F4 跨平台自动发版流水线（已完成）
+
+### What was done:
+背景：build.spec 在 v1.4.0 已完成并本机验证（52MB 单目录产物），但每次发版
+都靠手工跑打包 + 手工上传 Release。本任务把这条路径自动化。
+
+- 新增 .github/workflows/release.yml，三作业依赖链：
+  source（源码 ZIP）→ build（三平台矩阵）→ publish（统一转正式）
+- 平台矩阵：windows-latest / macos-latest(arm64) / ubuntu-latest。
+  关键约束：PyInstaller 不能交叉编译，所以三平台各占独立 runner，
+  而不是矩阵里可替换的一个维度
+- 每个平台构建流程：Ensure archive tools → PyInstaller 构建 →
+  --version 冒烟并与 app/__init__.py 比对 → 关键依赖完整性检查
+  （yt_dlp/bilibili_api/defusedxml/uvicorn）→ 打包 → SHA256 → 上传
+- source 作业用 git archive 生成源码 ZIP，并审计条目：
+  config.local.yaml / data/ / downloads/ / venv/ / 本地任务记录 命中即失败
+- 发布策略：三平台产物先传草稿，全部成功后 publish 才转正式。
+  任一平台失败不会产生正式 Release
+- 产物内附 config.yaml / LICENSE / README.md / bin/ 空目录 / 中文安装说明
+- 权限最小化：contents: write
+- 文档同步：DEVELOPER_GUIDE 新增「自动化发版」小节、README 与 README.en.md
+  打包章节改为「推送标签自动产出三平台」、CHANGELOG Unreleased、
+  完善计划书 v5 + F4 执行记录
+
+### Testing:
+- YAML 解析与结构校验通过（.mimosa/check_release_yml.py）：
+  触发器/作业链/矩阵/权限/必需步骤全部符合预期
+- 断言三平台均为原生 runner（无交叉编译）
+- 断言无 SIGPIPE 风险模式、无 CR 字符、无 PowerShell 语法混入
+- 断言源码归档含敏感路径审计
+- 未在真实 CI 上跑过（需推送 tag 触发），本地无法验证 PyInstaller
+  在 macOS/Linux runner 上的真实产物
+
+### Notes:
+实现过程中修正了自己第一版写出的 4 个真实缺陷：
+1. Package 与 Generate SHA256 两步工作目录错位——压缩包生成在项目根，
+   SHA256 步骤 cd dist 后找不到文件直接失败。统一落到 dist/
+2. set -o pipefail 下的 SIGPIPE 误判：`find | head -n 1 | grep -q`、
+   `zip --version | head -n 1`、`unzip -l | grep -q` 三处，
+   head/grep -q 提前退出会让上游收到 SIGPIPE 使整条管道判失败。
+   改为 find -print -quit 与先捕获到变量再 case 判断
+3. 源码包 files: BiliArchive-Pro-v*.zip 靠 glob 匹配产物名，
+   tag 格式变化会静默失配。改为从步骤输出显式取路径
+4. Windows runner 镜像不保证预装 zip/unzip，补 Ensure archive tools 步骤
+另外把最初写的 `"$BINARY" -c "import ..."` 冒烟检查删了——main.py 没有 -c
+参数，那条永远走 fallback 形同虚设；换成真正有意义的版本号比对
+- 未做：macOS x86_64 产物、代码签名与公证（需 Apple 开发者证书）、
+  产物自动更新检查
+- macOS 用户首次运行会遇到 Gatekeeper 提示，需右键打开或
+  xattr -d com.apple.quarantine，已在计划书记录在案
+
+## 2026-10-14 - Task: M3-F6 文档与社区基建（已完成）
+
+### What was done:
+背景：仓库只有 CI 工作流，外部贡献者没有入口既不知道如何报告问题，
+也不知道如何参与。补齐四块缺失资产，并修正一处过时引用。
+
+- .github/ISSUE_TEMPLATE/ 三件套：
+  bug_report.yml（10 段表单 / 6 个必填：版本、部署方式、平台、
+  问题描述、复现步骤；含脱敏日志与凭据确认勾选）
+  feature_request.yml（7 段，含「影响范围」下拉以判断是否触及删除逻辑）
+  config.yml（关闭空白 Issue + 安全私有报告与 Release 两条 contact link）
+- .github/pull_request_template.md：改动分类 + 影响面确认清单
+  （新增删除路径 / 外部请求 / 凭据 / DB 迁移）+ 验证记录 +
+  五条架构约束自查
+- CONTRIBUTING.md（4.9KB）：快速开始、提交前必过命令、
+  五条硬性边界（不删本地资产 / 不绕校验 / WebUI 不写库 /
+  不提交凭据 / 不隐式装远程可执行文件）、架构约定、测试要求
+  定位为外部贡献者唯一入口；DEVELOPER_GUIDE 保持维护者向
+- README.en.md（22.1KB）：与中文版章节一一对应的完整英文版，
+  两份 README 顶部互相切换
+- SECURITY.md 支持版本 1.1.x → 1.6.x（v1.6.0 发布后未同步）
+- 中文 README 顶部加语言切换；「参与贡献」节改为指向 CONTRIBUTING /
+  Issue 模板 / 私有漏洞报告；TODO 中「文档与社区基建」划掉
+- 完善计划书 v4 + F6 执行记录
+
+### Testing:
+- 三个 YAML 模板解析有效，字段数与凭据警示已断言
+- 后端 pytest 197 passed（未受影响，确认为纯文档改动）
+- release-safety 测试 7 passed
+- Code Review：README/CONTRIBUTING 引用的本地文件全部存在；
+  CHANGELOG 层级与既有格式一致；两 README 版本徽章一致
+
+### Notes:
+- 选表单式 YAML 而非 Markdown：字段可设必填与取值约束
+  （版本格式、影响范围枚举），能挡掉无效 Issue
+- 推送曾因 socks5 代理中断 git 写传输（curl 52 / HTTP 408）而失败，
+  改用 http:// 代理协议后一次成功。git 全局配置未改动
+
 ## 2026-10-13 - Task: M3-F5 WebUI 可操作化（commands.json 命令通道，已完成）
 
 ### What was done:

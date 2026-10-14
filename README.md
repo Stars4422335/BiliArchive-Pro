@@ -275,6 +275,15 @@ python main.py --cli --limit 3
 
 ### 6. 使用 PyInstaller 打包（可选，免 Python 环境分发）
 
+核心引擎可以打包为目录分发的可执行文件，适合分发给不想装 Python 环境的用户。**v1.6.x 起推送版本标签会自动产出三平台产物**，无需手工打包：
+
+```bash
+# 打出新版本并推送标签，CI 会自动构建 Windows / macOS / Linux 产物
+git tag -a v1.7.0 -m "v1.7.0" && git push origin v1.7.0
+```
+
+若需在本机打包：
+
 核心引擎可以打包为免 Python 环境的单目录可执行文件，适合分发给不想装 Python 环境的用户：
 
 ```bash
@@ -389,13 +398,12 @@ cd webui && npm ci && npm run lint && npm run build
 - [x] **全量同步关注UP主**：`followings.mode` 支持 `all`（全部关注）/ `list`（指定 UID），失效投稿自动进入墓碑与孤本保护；取关后本地资产保留。
 - [x] **观看历史元数据**：`sync_watch_history` 把看过的视频记录为本地观影档案（仅元数据，不下载本体），支持 `max_history_days` 窗口。
 - [x] **完整性巡检**：`verify_integrity` 三档（off/light/full）抽样校验已归档媒体，抓"存在但损坏"的静默失败，只标记不删除。
-- [x] **跨平台打包**：提供 PyInstaller 打包配置 `build.spec`（核心引擎单目录分发，Windows 实测通过）。
+- [x] **跨平台打包**：推送版本标签由 CI 自动产出 Windows / macOS / Linux 三平台免 Python 环境分发包（PyInstaller 构建 + 冒烟验证 + 完整性检查 + SHA256）。
 
 ### 🟡 扩展功能 (规划中/开发中)
 - [ ] **AI 内容摘要**：接入大模型，在下载完成后自动分析视频/专栏内容，并在 NFO 中追加 AI 内容摘要。
 - [ ] **弹幕词云图**：基于下载的弹幕文件，自动生成并保存弹幕词云图作为媒体库的海报/背景图。
 - [ ] **UP 主图文投稿同步**：把 `followings` 源从仅视频投稿扩展到图文（专栏）投稿。
-- [ ] **跨平台 release 矩阵**：CI 增加 win/mac/linux 打包作业，产物附 SHA256 上传 Release。
 
 ---
 

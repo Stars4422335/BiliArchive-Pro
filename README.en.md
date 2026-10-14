@@ -262,7 +262,14 @@ python main.py --cli --limit 3
 
 ### 6. Packaging with PyInstaller (optional, no Python required)
 
-The core engine can be packaged as a directory-distributed executable:
+The core engine can be packaged as a directory-distributed executable. **Since v1.6.x, pushing a version tag automatically produces artifacts for all three platforms:**
+
+```bash
+# tag and push; CI builds Windows, macOS, and Linux artifacts
+git tag -a v1.7.0 -m "v1.7.0" && git push origin v1.7.0
+```
+
+To package locally instead:
 ```bash
 # in an environment with dependencies installed
 pip install -r requirements.txt
@@ -334,13 +341,12 @@ See [CHANGELOG.md](CHANGELOG.md) for v1.3.0 and below (WebUI introduction, Plex 
 - [x] **WebUI panel**: overview, asset browsing, allowlisted settings; database read-only, token required for remote listening
 - [x] **Operable WebUI**: Operations view for scan/redownload/restart with a local command channel and execution receipts; deleting local assets is never exposed
 - [x] **Integrity checks**: sampled `off`/`light`/`full` verification that marks corruption without deleting
-- [x] **PyInstaller packaging**: `build.spec` for a directory-distributed executable
+- [x] **PyInstaller packaging**: pushing a version tag triggers CI to produce Windows, macOS, and Linux Python-free distributions (PyInstaller build + smoke test + completeness check + SHA256).
 
 ### 🟡 Planned
 - [ ] **AI summaries**: optional LLM-generated summaries written into NFO `<outline>`
 - [ ] **Danmaku word clouds**: locally generated word clouds saved as library artwork
 - [ ] **Article submissions for followed creators**: extend `followings` beyond video submissions
-- [ ] **Cross-platform release matrix**: win/mac/linux artifacts with checksums
 
 ---
 

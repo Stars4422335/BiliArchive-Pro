@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+### 跨平台自动发版
+
+- 新增 `.github/workflows/release.yml`：推送 `vX.Y.Z` 标签即自动产出三平台免 Python 环境分发包与源码 ZIP，无需手工执行发版步骤。
+- PyInstaller 不能交叉编译，因此 Windows / macOS(arm64) / Linux 各自在原生 runner 上并行构建，产物分别为 zip / tar.gz，并附 SHA256 校验文件。
+- 每个平台构建后强制冒烟：执行 `--version` 并与 `app/__init__.py` 声明的版本号比对，不一致即失败——防止打出标着旧版本号的包。
+- 产物完整性检查确认 `yt_dlp` / `bilibili_api` / `defusedxml` / `uvicorn` 均随包发出，单目录模式缺任一文件都会导致用户拿到坏包。
+- 源码 ZIP 生成后审计条目，出现 `config.local.yaml`、`data/`、`downloads/`、`venv/` 或本地任务记录即失败。
+- 三平台产物先上传为草稿，全部成功后才统一转为正式发布；任一平台失败都不会产生正式 Release。
+- 随包附带 `config.yaml` / `LICENSE` / `README.md` 与中文安装说明，用户无需手工创建目录结构。
+
 ### 文档与社区基建
 
 - 新增 `CONTRIBUTING.md`：说明本地验证命令、测试要求，以及五条不可逾越的架构边界（删除本地资产永不做、WebUI 不写数据库、不绕过输入校验、不隐式安装远程可执行文件、不提交凭据）。
