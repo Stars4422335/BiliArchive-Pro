@@ -11,6 +11,9 @@ system:
   sync_watch_later: false      # 是否自动备份“稍后再看”列表
   sync_watch_history: false    # 是否同步观看历史（仅记元数据进库，不下载视频本体）
   max_history_days: 90         # 观看历史回溯窗口（天），0 表示不限（历史量大时慎用）
+  db_wal: false                # SQLite WAL 模式：WebUI 读取不再阻塞核心写入。
+                              # 需要数据库同目录可写（不能是只读挂载或部分网络盘）。
+                              # 无法启用时静默退回默认模式，不影响功能
   verify_integrity: "off"      # 完整性巡检：off=关闭 light=大小+文件头校验 full=追加 ffmpeg 解码探测
   check_update_on_start: false # 每次启动时检查组件更新
   scan_interval_seconds: 21600 # 每轮扫描结束后的休眠时间 (秒)

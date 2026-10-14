@@ -113,6 +113,8 @@ system:
   sync_watch_history: false          # 同步观看历史（仅记元数据，不下载视频本体）
   max_history_days: 90               # 观看历史回溯窗口（天）；0 表示不限，历史量大时慎用
   verify_integrity: "off"            # 完整性巡检档位：off / light / full（见下文说明）
+  db_wal: false                      # SQLite WAL：WebUI 读取不再阻塞核心写入。
+                                    # 需要库同目录可写；启用失败时自动退回默认模式
 
 network:
   sync_retry_attempts: 3            # 同步列表读取最大尝试次数
@@ -214,6 +216,13 @@ favorites:
 - 过滤「哈哈哈」「awsl」等应答噪声与虚词，但**保留「前排」「打卡」等高频且有语义的词**。
 - **只生成不阻断**：XML 损坏、词数不足、渲染异常都只打印提示，不影响视频下载与 NFO 写入的成功判定。
 - 关闭时（默认）零开销，不产生任何额外文件。
+
+**数据库性能（`system.db_wal`）**
+
+- 2 万资产实测：WebUI 资产列表 **9.46ms → 0.11ms**，计数 **8.12ms → 0.68ms**。索引在启动时自动创建，旧库无需手工迁移。
+- `db_wal: true` 开启 SQLite WAL：写入不再被 WebUI 的并发读阻塞（实测 5.5 秒 → 15 毫秒）。
+- **默认关闭**：WAL 需要在数据库同目录创建 `-wal` / `-shm` 文件，只读挂载或部分网络盘会失败。启用失败时程序静默退回默认日志模式并打印提示，功能不受影响。
+- 已验证 WAL 模式下 WebUI 的只读连接（`mode=ro`）完全兼容，包括写事务进行中的读取。
 
 
 ---
@@ -415,6 +424,7 @@ cd webui && npm ci && npm run lint && npm run build
 
 ### 🟡 扩展功能 (规划中/开发中)
 - [x] **弹幕词云**：`wordcloud.enabled` 基于同一份 `.danmaku.xml` 生成 `.wordcloud.svg` 侧车，零新依赖、纯本地计算，失败不影响下载。
+- [x] **性能治理**：面向真实查询的索引 + WebUI 排序去表达式化；`db_wal` 可选开启 WAL。2 万资产实测 WebUI 列表 9.5ms→0.11ms、计数 8.1ms→0.7ms。
 - [ ] **AI 内容摘要**：接入大模型，在下载完成后自动分析视频/专栏内容，并在 NFO 中追加 AI 内容摘要。
 - [ ] **UP 主图文投稿同步**：把 `followings` 源从仅视频投稿扩展到图文（专栏）投稿。
 

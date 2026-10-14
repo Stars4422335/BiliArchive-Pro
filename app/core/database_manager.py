@@ -18,17 +18,53 @@ class DatabaseManager:
         "last_verify": "TEXT",
     }
 
-    def __init__(self, db_path):
+    #: 面向真实查询的索引（万级资产实测后保留的只有这两个）。
+    #:
+    #: 刻意**不**为 candidates_for_verify 建索引：它的排序键
+    #: `ORDER BY last_verify IS NOT NULL` 是表达式，SQLite 无法用索引排序，
+    #: 反而要为每个匹配行回表再排临时 B-tree。实测 2 万资产下：
+    #: 0% 填充 6.4->13.9ms，50% 填充 5.7->18.1ms，100% 填充 11.3->108.4ms，
+    #: 全部更慢。扫描 + 排序在这个查询上本就更快。
+    _INDEXES = (
+        # WebUI 资产列表：ORDER BY last_check DESC, bvid（覆盖索引，无需回表）
+        ("idx_assets_lastcheck", "assets(last_check DESC, bvid)"),
+        # WebUI 按 type 筛选与 COUNT(*)
+        ("idx_assets_type", "assets(type)"),
+    )
+
+    def __init__(self, db_path, *, use_wal: bool = False):
         parent_dir = os.path.dirname(os.path.abspath(db_path))
         if db_path != ":memory:" and parent_dir:
             os.makedirs(parent_dir, exist_ok=True)
         self.conn = sqlite3.connect(db_path)
         try:
+            if use_wal:
+                self._enable_wal()
             self._init_db()
         except Exception:
             self.conn.close()
             self.conn = None
             raise
+
+    def _enable_wal(self):
+        """开启 WAL：读者不再阻塞写入者。
+
+        万级资产实测，写入被并发读事务阻塞 5.5s -> 15ms。
+        失败时静默退回默认日志模式——WAL 需要在库同目录创建
+        -wal/-shm，网络盘或只读挂载会失败，不应因此让引擎起不来。
+        """
+        if not self.conn:
+            return False
+        try:
+            mode = self.conn.execute("PRAGMA journal_mode=WAL").fetchone()
+            if not mode or str(mode[0]).lower() != "wal":
+                return False
+            # NORMAL 在 WAL 下仍能保证崩溃安全，仅放宽 fsync 频率
+            self.conn.execute("PRAGMA synchronous=NORMAL")
+            return True
+        except sqlite3.Error as exc:
+            print(f"[!] 启用 WAL 失败，继续使用默认日志模式: {exc}")
+            return False
 
     def _init_db(self):
         # status: 0-Active, 1-Tombstoned, 2-Protected
@@ -75,12 +111,41 @@ class DatabaseManager:
 
             self._repair_legacy_rows()
             self._ensure_bvid_unique(columns)
+            # 索引必须在列迁移与旧行修复之后创建：
+            # last_verify / integrity_status 是 v1.5.0 才补的列，
+            # 提前建索引会在旧库上直接失败。
+            self._ensure_indexes()
             self.conn.execute(f"PRAGMA user_version={self.SCHEMA_VERSION}")
         except Exception:
             self.conn.rollback()
             raise
         else:
             self.conn.commit()
+
+    def _ensure_indexes(self):
+        """补齐查询索引，并清理实测有害的旧索引。已存在则跳过。
+
+        索引名与列定义都来自模块内常量，不接受外部输入。
+        """
+        existing = {
+            row[1]
+            for row in self.conn.execute("PRAGMA index_list(assets)").fetchall()
+        }
+
+        # 早期版本建过 idx_assets_verify，实测它让 candidates_for_verify
+        # 慢 2~10 倍（排序键是表达式，用不上索引）。这里主动清理。
+        if "idx_assets_verify" in existing:
+            self.conn.execute('DROP INDEX IF EXISTS "idx_assets_verify"')
+            existing.discard("idx_assets_verify")
+
+        for name, definition in self._INDEXES:
+            if name in existing:
+                continue
+            if not re.fullmatch(r"idx_assets_[a-z_]+", name):
+                raise RuntimeError(f"索引名不合法，已拒绝创建: {name}")
+            self.conn.execute(
+                f'CREATE INDEX IF NOT EXISTS "{name}" ON {definition}'
+            )
 
     def _repair_legacy_rows(self):
         invalid_rows = self.conn.execute(

@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+### 性能治理（万级资产实测优化）
+
+基于 2 万资产的实测基准（`.mimosa/bench_perf.py`），而非猜测：
+
+- **WebUI 资产列表 9.46ms → 0.11ms（87x）**：排序键从 `ORDER BY COALESCE(last_check, '') DESC` 改为 `ORDER BY last_check DESC`。二者语义一致（SQLite 中 DESC 排序本就把 NULL 放最后，有测试锁定），但 COALESCE 是表达式，索引无法用于排序；改后走覆盖索引不再需要临时 B-tree。
+- **WebUI 计数 8.12ms → 0.68ms（12x）**：新增 `idx_assets_type` 覆盖索引。
+- **合计 27.99ms → 14.03ms（2.0x）**。
+- 新增索引在启动时自动创建，**位置在列迁移与旧行修复之后**——`last_verify` 是 v1.5.0 才补的列，提前建索引会在旧库上直接失败。
+- **主动删除实测有害的索引**：早期为 `candidates_for_verify` 建的 `idx_assets_verify` 在三种 `last_verify` 分布下全部更慢（0% 填充 6.4→13.9ms、50% 5.7→18.1ms、100% 11.3→108.4ms）。原因是它的排序键 `ORDER BY last_verify IS NOT NULL` 同样是表达式，用不上索引，反而要为每个匹配行回表再排序。启动时检测到该索引会主动 `DROP`。
+- 新增 `system.db_wal`（默认 `false`）：WAL 模式下写入不再被并发读阻塞（实测 5.5s → 15ms）。**默认关闭**是因为 WAL 需要在库同目录创建 `-wal`/`-shm`，只读挂载或部分网络盘会失败；启用失败时静默退回默认日志模式，不影响功能。已验证 WAL 下 WebUI 的 `mode=ro` 连接完全兼容。
+
 ### 弹幕词云（README TODO #5）
 
 - 新增 `system` 无关的独立配置块 `wordcloud`：`enabled`（默认 `false`）+ `max_terms`（默认 60）。

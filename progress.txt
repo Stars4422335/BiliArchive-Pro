@@ -1,6 +1,51 @@
 BiliArchive-Pro 进度记录
 ========================
 
+## 2026-10-14 - Task: M4 性能治理（万级资产实测优化，已完成）
+
+### What was done:
+方法论：先量后改。造 2 万资产基准，用 EXPLAIN QUERY PLAN 确认是否走索引，
+逐项验证收益，不凭猜测优化。
+- app/core/database_manager.py：
+  * 新增 _INDEXES 常量 + _ensure_indexes()，启动时自动建索引
+  * 索引创建位置在列迁移与旧行修复之后（last_verify 是 v1.5.0 才补的列）
+  * 启动时主动 DROP 实测有害的 idx_assets_verify
+  * __init__ 新增 use_wal 关键字参数（默认 False），_enable_wal() 失败静默降级
+- app/webui/service.py：两处 ORDER BY COALESCE(last_check,'') → last_check
+- main.py：把 config 的 db_wal 透传给 DatabaseManager
+- config.yaml：新增 system.db_wal（默认 false）
+
+### Testing:
+- 新增 tests/test_performance.py 17 例，断言结构性事实而非耗时
+  （避免 CI 抖动）：索引存在/被删、查询不含 COALESCE、排序语义不变、
+  WAL 可选且降级、老库迁移路径可建索引
+- 全量 245 passed（228 + 17）
+
+### 实测数据（2 万资产）:
+- WebUI 资产列表 9.46ms -> 0.11ms（87x）
+- WebUI 计数 8.12ms -> 0.68ms（12x）
+- 三项合计 27.99ms -> 14.03ms（2.0x）
+
+### Notes:
+**本次最重要的一次纠错——删掉自己刚加的索引。**
+最初为 candidates_for_verify 建 idx_assets_verify，基线显示 10.4->3.1ms，
+看似成功。但基线数据里 last_verify 全为 NULL，不具代表性。
+用真实分布复测后发现三种填充率下全部更慢：
+  0%   填充: 6.37 -> 13.88ms（慢 2.2x）
+  50%  填充: 5.70 -> 18.10ms（慢 3.2x）
+  100% 填充: 11.34 -> 108.37ms（慢 9.6x）
+原因：其排序键 ORDER BY last_verify IS NOT NULL 也是表达式，SQLite 用不上
+索引排序，反而要为每个匹配行回表取 last_verify 再排临时 B-tree。
+教训：索引收益高度依赖数据分布，用失真的基线做决策会得到相反结论。
+
+- db_wal 默认关闭：WAL 需在库同目录建 -wal/-shm，只读挂载或部分网络盘会失败。
+  已验证 WAL 下 WebUI 的 mode=ro 完全兼容（含写事务进行中读取）
+- 刻意不优化 candidates_for_verify：它每 6 小时才跑一次，不在交互路径上，
+  而 WebUI 是用户每次打开都要用的。优化交互路径优先
+- 未做：深分页（OFFSET 万级仍需扫描）、candidates_for_verify 的表达式排序
+- 下一步：M4 剩余——AI 内容摘要（涉及内容外发隐私，需先定 API 选型）、
+  UP 主图文投稿同步
+
 ## 2026-10-14 - Task: M4 弹幕词云（README TODO #5，已完成）
 
 ### What was done:

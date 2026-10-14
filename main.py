@@ -225,7 +225,10 @@ async def daemon_loop(config, cred, uid):
             )
             await ComponentUpdater(config).check_all()
 
-        db = DatabaseManager(config['system']['db_path'])
+        db = DatabaseManager(
+            config['system']['db_path'],
+            use_wal=bool(config.get('system', {}).get('db_wal', False)),
+        )
         await _run_scan_loop(config, cred, uid, db, runtime=runtime)
     except asyncio.CancelledError:
         _update_runtime(
