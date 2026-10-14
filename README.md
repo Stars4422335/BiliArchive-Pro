@@ -144,6 +144,9 @@ followings:
   #          ⚠️ 首轮拉取量大，强烈建议配合 max_downloads_per_run 小流量试跑
   #   list = 只同步下方 list 中显式列出的 UID（无需关注关系，可用于监控任意 UP 主）
   mode: "off"
+  # 关注源的专栏（图文）投稿。off=不抓（默认） article=只抓专栏 all=视频+专栏都抓
+  # 视频投稿始终随 mode 同步；此开关只控制额外的专栏请求。
+  article_types: "off"
   list:
     # - mid: 946974
     #   name: "某UP主"        # name 可省略，省略时自动向 B 站查询
@@ -188,6 +191,7 @@ favorites:
 - `list` 模式条目支持 `[{mid: 946974, name: "某UP主"}]` 或纯 UID `[946974]`；省略名称时自动向 B 站补全。
 - **取关语义**：取关（或从 list 移除）后，该 UP 主不再被扫描，但本地已备份的资产**永久保留**，程序不存在任何删除逻辑。
 - 关注源与收藏夹共享同一套资产保护：失效投稿自动建墓碑或触发孤本保护；已完整归档的跳过。
+- `article_types` 额外控制**专栏（图文）投稿**：`off`（默认）/ `article`（只抓专栏）/ `all`（视频+专栏）。专栏归档复用同一套 Markdown + NFO 管线。
 
 **观看历史同步（`system.sync_watch_history`）**
 
@@ -417,7 +421,7 @@ cd webui && npm ci && npm run lint && npm run build
 - [x] **WebUI 管理面板**：提供概览、资产浏览和白名单设置页面；数据库只读，远程监听必须配置 Token。
 - [x] **WebUI 可操作化**：「操作」视图可触发即时巡检、重下单个资产、提示重启核心；本地文件命令通道 + 执行回执审计，删除本地资产始终不开放。
 - [x] **智能路径管理**：跨平台安全的路径名非法字符过滤与防爆长路径自动截断机制。
-- [x] **全量同步关注UP主**：`followings.mode` 支持 `all`（全部关注）/ `list`（指定 UID），失效投稿自动进入墓碑与孤本保护；取关后本地资产保留。
+- [x] **全量同步关注UP主**：`followings.mode` 支持 `all`（全部关注）/ `list`（指定 UID），失效投稿自动进入墓碑与孤本保护；取关后本地资产保留。`article_types` 可额外同步专栏图文。
 - [x] **观看历史元数据**：`sync_watch_history` 把看过的视频记录为本地观影档案（仅元数据，不下载本体），支持 `max_history_days` 窗口。
 - [x] **完整性巡检**：`verify_integrity` 三档（off/light/full）抽样校验已归档媒体，抓"存在但损坏"的静默失败，只标记不删除。
 - [x] **跨平台打包**：推送版本标签由 CI 自动产出 Windows / macOS / Linux 三平台免 Python 环境分发包（PyInstaller 构建 + 冒烟验证 + 完整性检查 + SHA256）。
@@ -426,7 +430,6 @@ cd webui && npm ci && npm run lint && npm run build
 - [x] **弹幕词云**：`wordcloud.enabled` 基于同一份 `.danmaku.xml` 生成 `.wordcloud.svg` 侧车，零新依赖、纯本地计算，失败不影响下载。
 - [x] **性能治理**：面向真实查询的索引 + WebUI 排序去表达式化；`db_wal` 可选开启 WAL。2 万资产实测 WebUI 列表 9.5ms→0.11ms、计数 8.1ms→0.7ms。
 - [ ] **AI 内容摘要**：接入大模型，在下载完成后自动分析视频/专栏内容，并在 NFO 中追加 AI 内容摘要。
-- [ ] **UP 主图文投稿同步**：把 `followings` 源从仅视频投稿扩展到图文（专栏）投稿。
 
 ---
 

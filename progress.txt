@@ -1,6 +1,38 @@
 BiliArchive-Pro 进度记录
 ========================
 
+## 2026-10-14 - Task: M4 关注源图文（专栏）投稿同步（已完成）
+
+### What was done:
+背景：v1.4.0 的 F1 记录里把"关注源图文投稿"列为暂缓项，本轮补齐。
+- parser.py 新增 get_user_articles()：x/space/article + order=pubtime，
+  cv 号统一归一为正整数（兼容 int/str 两种返回），非法条目跳过不抛错，
+  has_more 分页判断
+- scanner.py 新增 scan_following_articles()：沿用关注源既有语义
+  （取关保留、已归档跳过+更新存活标记、全局下载上限）；
+  专栏复用收藏夹管线的 process_article_to_md + create_nfo
+- main.py 接入：article_types ∈ {article, all} 时，对同一批 UP 主再跑一轮图文
+- config.yaml 新增 followings.article_types（off/article/all，默认 off）
+
+### Testing:
+- 新增 tests/test_following_articles.py 14 例
+- 全量 259 passed（245 + 14）
+
+### Notes:
+- 正文不由列表 API 返回，仍由 MetadataGenerator 按 read/cv{cv} 自行抓取，
+  接口只管列表——与收藏夹管线的专栏处理完全一致，避免两套解析逻辑
+- article_types 默认 off：视频投稿始终随 mode 同步，此开关只控制额外的
+  专栏请求，避免只想要视频的用户被无关请求打扰
+- 关键 NFO 写入失败时不写数据库完成状态，下一轮重试——与视频管线一致
+- 未实现"专栏源端失效"的墓碑/孤本保护：URL 失效时 process_article_to_md
+  返回 False，走"下轮重试"，不写数据库。宁可重复抓取也不误标状态。
+  若后续需要，可基于连续失败次数再判定失效
+- 写测试时踩的坑：httpx stub 必须实现 async get()，且 parser 的
+  get_user_articles 是 async——同步 lambda 桩会报
+  "tuple can't be used in await"；_fetch_with_retry 会把内部异常包成
+  SyncFetchError，断言要匹配外层异常而非原始 ValueError/RuntimeError
+- 下一步：M4 最后一项——AI 内容摘要（涉及内容外发隐私，需先定 API 选型）
+
 ## 2026-10-14 - Task: M4 性能治理（万级资产实测优化，已完成）
 
 ### What was done:

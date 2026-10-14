@@ -140,6 +140,7 @@ sync_collections:
 followings:
   # Local assets are kept when you unfollow. See the config guide for the full switch list.
   mode: "off"                       # off / all / list
+  article_types: "off"              # off / article / all — articles (image-text posts) for followed creators
   list:
     # - mid: 946974
     #   name: "Some creator"        # name is optional; queried from Bilibili if omitted
@@ -182,6 +183,7 @@ Media library output rules:
 - `list` entries accept `[{mid: 946974, name: "Creator"}]` or bare UIDs `[946974]`; a missing name is looked up from Bilibili.
 - **Unfollow semantics**: after unfollowing (or removing from `list`), the creator is no longer scanned, but locally archived assets are **permanently kept**. No deletion logic exists.
 - Follow sources share the same protection as favorites: dead submissions automatically create tombstones or trigger orphan protection; complete archives are skipped.
+- `article_types` additionally controls **article (image-text) submissions**: `off` (default) / `article` / `all`. Articles reuse the same Markdown + NFO pipeline.
 
 **Watch history sync (`system.sync_watch_history`)**
 
@@ -366,9 +368,9 @@ See [CHANGELOG.md](CHANGELOG.md) for v1.3.0 and below (WebUI introduction, Plex 
 - [x] **PyInstaller packaging**: pushing a version tag triggers CI to produce Windows, macOS, and Linux Python-free distributions (PyInstaller build + smoke test + completeness check + SHA256).
 
 ### 🟡 Planned
-- [ ] **AI summaries**: optional LLM-generated summaries written into NFO `<outline>`
 - [x] **Danmaku word clouds**: `wordcloud.enabled` generates a `.wordcloud.svg` sidecar from the same `.danmaku.xml`, with no new dependencies and fully local computation; failures never affect downloads.
-- [ ] **Article submissions for followed creators**: extend `followings` beyond video submissions
+- [x] **Database performance**: indexes matched to real queries plus expression-free WebUI sorting; `db_wal` optionally enables WAL. With 20k assets the WebUI list went 9.5ms→0.11ms and counting 8.1ms→0.7ms.
+- [ ] **AI summaries**: optional LLM-generated summaries written into NFO `<outline>`
 
 ---
 

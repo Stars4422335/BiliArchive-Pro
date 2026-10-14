@@ -507,6 +507,92 @@ class BiliParser:
 
         return await self._fetch_with_retry(label, fetch)
 
+    async def get_user_articles(self, mid, page=1, page_size=30):
+        """拉取指定 UP 主的专栏（图文）投稿列表，按发布时间倒序。
+
+        专栏用 cv 号作为稳定标识，正文由 MetadataGenerator 自行按
+        https://www.bilibili.com/read/cv{cv} 抓取，本接口只负责列表。
+        """
+        try:
+            normalized_mid = int(mid)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("UP 主 mid 必须是正整数 UID") from exc
+        if normalized_mid <= 0:
+            raise ValueError("UP 主 mid 必须是正整数 UID")
+
+        label = f"拉取 UP 主 {normalized_mid} 专栏第 {page} 页"
+        print(f"[*] 正在{label}...")
+
+        async def fetch():
+            url = (
+                "https://api.bilibili.com/x/space/article"
+                f"?mid={normalized_mid}&pn={page}&ps={page_size}&order=pubtime"
+            )
+            cookies = self.credential.get_cookies() if self.credential else {}
+            headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/122.0.0.0 Safari/537.36"
+                ),
+                "Referer": f"https://space.bilibili.com/{normalized_mid}/article",
+            }
+            async with httpx.AsyncClient(
+                cookies=cookies,
+                headers=headers,
+                timeout=self.request_timeout_seconds,
+            ) as client:
+                response = await client.get(url)
+                response.raise_for_status()
+                data = response.json()
+
+            if not isinstance(data, dict):
+                raise ValueError("UP 主专栏返回结构不是映射")
+            if data.get("code") != 0:
+                raise RuntimeError(data.get("message", "未知错误"))
+
+            payload = data.get("data") or {}
+            if not isinstance(payload, dict):
+                raise ValueError("UP 主专栏 data 不是映射")
+            raw_list = payload.get("list")
+            if raw_list is None:
+                raw_list = []
+            if not isinstance(raw_list, list):
+                raise ValueError("UP 主专栏 list 不是列表")
+
+            parsed_list = []
+            for item in raw_list:
+                if not isinstance(item, dict):
+                    raise ValueError("UP 主专栏包含无效条目")
+                # cv 号可能以 int 或 str 出现，统一成正值
+                raw_id = item.get("id") or item.get("cv_id") or 0
+                try:
+                    cv_id = int(raw_id)
+                except (TypeError, ValueError):
+                    continue
+                if cv_id <= 0:
+                    continue
+                parsed_list.append(
+                    {
+                        "title": item.get("title") or f"cv{cv_id}",
+                        "id": cv_id,
+                        "type": "article",
+                        "up_name": item.get("author") or item.get("name") or "",
+                        "cover": item.get("image_urls") or item.get("cover") or "",
+                        "intro": item.get("summary") or "",
+                        "pubtime": item.get("publish_time") or item.get("ctime") or 0,
+                    }
+                )
+
+            print(f"[+] 成功拉取 UP 主专栏第 {page} 页 {len(parsed_list)} 篇。")
+            page_info = payload.get("page") or {}
+            if not isinstance(page_info, dict):
+                raise ValueError("UP 主专栏 page 不是映射")
+            total = int(page_info.get("count", 0) or 0)
+            return parsed_list, total > page * page_size
+
+        return await self._fetch_with_retry(label, fetch)
+
     async def get_watch_history(self, page=1, page_size=100):
         """拉取登录账号的观看历史（仅元数据用途，不触发下载）。"""
         if not self.uid:

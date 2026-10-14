@@ -498,6 +498,34 @@ async def _run_scan_loop(config, cred, uid, db, runtime=None):
                 if not completed:
                     incomplete_sources.append(label)
 
+            # 关注源的图文（专栏）投稿，与视频投稿分开一轮：
+            # article_types 单独开关，避免只想要视频的用户被专栏请求打扰。
+            article_types = str(
+                followings_config.get('article_types', 'off')
+            ).strip().lower()
+            if article_types in {'article', 'all'}:
+                for follow_mid, follow_name in known_names.items():
+                    if scanner.max_global_downloads and scanner.global_download_count >= scanner.max_global_downloads:
+                        break
+                    label = f"关注图文 {follow_name} ({follow_mid})"
+                    _update_runtime(
+                        runtime,
+                        phase="source",
+                        source=label,
+                        current_title=None,
+                        current_asset=None,
+                        message=f"正在扫描{label}",
+                    )
+                    completed = await _run_source_scan(
+                        label,
+                        lambda follow_mid=follow_mid, follow_name=follow_name: scanner.scan_following_articles(
+                            follow_mid,
+                            follow_name,
+                        ),
+                    )
+                    if not completed:
+                        incomplete_sources.append(label)
+
         # 接续同步观看历史（仅记元数据，不下载视频本体——用户已拍板）
         if config.get('system', {}).get('sync_watch_history', False):
             if not scanner.max_global_downloads or scanner.global_download_count < scanner.max_global_downloads:

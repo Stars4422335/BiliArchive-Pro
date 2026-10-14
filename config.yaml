@@ -43,6 +43,9 @@ followings:
   #   all  = 全量同步登录账号的全部关注 UP 主（⚠️ 首轮拉取量大，建议配 max_downloads_per_run 保护）
   #   list = 只同步下方 list 中显式列出的 UID（无需关注关系，也可用于监控任意 UP 主）
   mode: "off"
+  # 关注源的专栏（图文）投稿。off=不抓（默认） article=只抓专栏 all=视频+专栏都抓
+  # 视频投稿始终随 mode 同步；此开关只控制额外的专栏请求。
+  article_types: "off"
   list:
     # - mid: 946974
     #   name: "某UP主"        # name 可省略，省略时自动向 B 站查询

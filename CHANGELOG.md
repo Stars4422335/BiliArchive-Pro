@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+### 关注源图文（专栏）投稿同步
+
+- 新增 `followings.article_types` 配置（默认 `off`）：`article` 只抓专栏，`all` 视频与专栏都抓。视频投稿始终随 `mode` 同步，此开关只控制额外的专栏请求——只想要视频的用户不会被打扰。
+- `BiliParser.get_user_articles()` 拉取 UP 主专栏投稿列表（`x/space/article`），cv 号统一归一为正整数，无效条目跳过；正文仍由 `MetadataGenerator` 按 `read/cv{ cv }` 自行抓取。
+- `FavScanner.scan_following_articles()` 沿用关注源既有语义：取关后本地资产保留不动，已归档专栏跳过并更新存活标记，不完整记录续跑。
+- 专栏归档复用收藏夹管线的同一套逻辑（Markdown + NFO + 封面），**关键 NFO 写入失败时不写数据库完成状态**，下一轮重试。
+- 新增测试 14 例，覆盖 cv 号归一、无效条目跳过、API 错误传播、已归档跳过、NFO 失败不写完成状态、全局下载上限、配置闸门默认值。
+
 ### 性能治理（万级资产实测优化）
 
 基于 2 万资产的实测基准（`.mimosa/bench_perf.py`），而非猜测：
