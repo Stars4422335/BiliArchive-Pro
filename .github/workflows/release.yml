@@ -65,13 +65,31 @@ jobs:
           # 只用受跟踪内容：凭据、数据库、本地配置与本地任务记录不会进入包
           git archive --format=zip --prefix="BiliArchive-Pro-${TAG}/" \
             --output "BiliArchive-Pro-${TAG}.zip" "$TAG"
-          # 审计：确认敏感路径一个都没被打进去
+
+          # 审计：逐条目精确匹配归档内的顶层路径。
+          # 不能把整个清单拼成一段文本做子串搜索——仓库里有
+          # webui/src/data/ 与 tests/test_history_integrity.py 这类
+          # 合法路径，含 "/data/" 但与根目录 data/ 毫无关系。
           ENTRIES="$(unzip -Z1 "BiliArchive-Pro-${TAG}.zip")"
-          for forbidden in "config.local.yaml" "/data/" "/downloads/" "/venv/" "本地任务计划"; do
-            case "$ENTRIES" in
-              *"$forbidden"*) echo "发布包含敏感路径: $forbidden"; exit 1 ;;
+          LEAKED=""
+          while IFS= read -r entry; do
+            [ -n "$entry" ] || continue
+            rel="${entry#${TAG}/}"          # 去掉 BiliArchive-Pro-vX.Y.Z/ 前缀
+            rel="${rel%/}"                   # 去掉目录条目的尾斜杠
+            case "$rel" in
+              config.local.yaml|.env)          LEAKED="$LEAKED $rel" ;;
+              data/*|downloads/*|bin/*|venv/*|logs/*|__pycache__/*|.pytest_cache/*|.mimosa/*)
+                                           LEAKED="$LEAKED $rel" ;;
+              本地任务计划与执行表.md)          LEAKED="$LEAKED $rel" ;;
+              *.db|*.db-journal|*.db-wal|*.db-shm|*.pyc)
+                                           LEAKED="$LEAKED $rel" ;;
             esac
-          done
+          done <<< "$ENTRIES"
+
+          if [ -n "$LEAKED" ]; then
+            echo "发布包含不允许的路径:$LEAKED"
+            exit 1
+          fi
           echo "条目数: $(printf '%s\n' "$ENTRIES" | wc -l)"
           echo "source=$PWD/BiliArchive-Pro-${TAG}.zip" >> "$GITHUB_OUTPUT"
 
