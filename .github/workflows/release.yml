@@ -251,7 +251,9 @@ jobs:
           if [ "${{ matrix.archive }}" = "zip" ]; then
             (cd dist && zip -r "${NAME}.zip" BiliArchive-Pro > /dev/null)
           else
-            tar -C dist -czf "${NAME}.tar.gz" BiliArchive-Pro
+            # -f 与文件名之间必须有空格：写成 -czf"NAME" 会被解析成
+            # 单个选项串，GNU tar 报 "Cannot open: No such file or directory"
+            tar -czf "dist/${NAME}.tar.gz" -C dist BiliArchive-Pro
           fi
           # 校验压缩包内容含可执行文件。
           # grep -q 会提前退出并让上游收到 SIGPIPE，在 pipefail 下误判失败，
@@ -267,6 +269,8 @@ jobs:
           esac
           ls -lh dist/"${NAME}".*
 
+      # 用 Python 算校验值而非 shasum / sha256sum：前者只有 macOS 有，
+      # 后者不是所有 runner 都装了，而 Python 三个平台都必然存在。
       - name: Generate SHA256
         shell: bash
         run: |
@@ -274,11 +278,20 @@ jobs:
           NAME="BiliArchive-Pro-${{ needs.source.outputs.tag }}-${{ matrix.label }}"
           cd dist
           if [ "${{ matrix.archive }}" = "zip" ]; then
-            shasum -a 256 "${NAME}.zip" > "${NAME}.zip.sha256"
+            ARCHIVE="${NAME}.zip"
           else
-            shasum -a 256 "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256"
+            ARCHIVE="${NAME}.tar.gz"
           fi
-          cat "${NAME}".*.sha256
+          python -c "
+          import hashlib, sys
+          path = sys.argv[1]
+          with open(path, 'rb') as fh:
+              digest = hashlib.sha256(fh.read()).hexdigest()
+          with open(path + '.sha256', 'w', encoding='utf-8') as out:
+              out.write(f'{digest}  {path}\n')
+          print(digest, path)
+          " "$ARCHIVE"
+          cat "${ARCHIVE}.sha256"
 
       - name: Upload to draft release
         uses: softprops/action-gh-release@v2
