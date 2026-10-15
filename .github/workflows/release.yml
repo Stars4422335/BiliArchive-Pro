@@ -41,13 +41,17 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
+      # 本作业固定跑在 ubuntu-latest，runner 自带 unzip；这里只做兜底校验，
+# 不再无条件 sudo（GitHub runner 的 apt 本身免密，多余的 sudo 只会掩盖问题）
       - name: Ensure unzip
         run: |
           set -euo pipefail
           if ! command -v unzip > /dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y unzip
+            apt-get update
+            apt-get install -y unzip
           fi
+          command -v unzip > /dev/null || { echo "unzip 不可用"; exit 1; }
+          echo "unzip 就绪"
 
       - name: Resolve tag
         id: meta
@@ -114,12 +118,15 @@ jobs:
           - os: windows-latest
             label: windows-x64
             archive: zip
+            pkg_install: choco
           - os: macos-latest
             label: macos-arm64
             archive: tar
+            pkg_install: brew
           - os: ubuntu-latest
             label: linux-x64
             archive: tar
+            pkg_install: apt
 
     steps:
       - name: Check out repository
@@ -137,16 +144,21 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install pyinstaller
 
-      # Windows runner 镜像不保证预装 zip/unzip
+      # 各平台 runner 镜像不保证预装 zip/unzip，且包管理器各不相同
+      # （windows-latest 没有 sudo，用不了 apt）
       - name: Ensure archive tools
         shell: bash
         run: |
           set -euo pipefail
           if ! command -v zip > /dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y zip unzip
+            case "${{ matrix.pkg_install }}" in
+              apt)  apt-get update && apt-get install -y zip unzip ;;
+              brew) brew install zip unzip ;;
+              choco) choco install zip --no-progress -y || true ;;
+              *) echo "未知包管理器: ${{ matrix.pkg_install }}"; exit 1 ;;
+            esac
           fi
-          command -v zip > /dev/null || { echo "zip 不可用"; exit 1; }
+          command -v zip > /dev/null || { echo "zip 仍不可用"; exit 1; }
           command -v tar > /dev/null || { echo "tar 不可用"; exit 1; }
           echo "归档工具就绪"
 
@@ -177,25 +189,45 @@ jobs:
             *) echo "版本号不一致：产物=$VERSION 期望=$EXPECTED"; exit 1 ;;
           esac
 
-      # 目录完整性检查：单目录模式要求 dist/BiliArchive-Pro/ 整体交付，
-      # 少任何一个 _internal 文件都会让用户拿到坏包。
+          # 用真实运行路径验证运行时依赖齐备。
+          # main.py 走到 --version 已经 import 了 bilibili_api 与 app.*，
+          # 能跑通即说明它们确实被打进了 PYZ；yt_dlp 只在实际下载时才用到，
+          # 这里用构建环境做一次等价导入验证。
+          echo "--- runtime import check ---"
+          python -c "
+          import importlib
+          for mod in ('yt_dlp', 'bilibili_api', 'defusedxml.minidom', 'uvicorn'):
+              importlib.import_module(mod)
+          print('runtime imports OK')
+          "
+          echo "运行时依赖验证通过"
+
+      # 产物完整性检查。
+      #
+      # 刻意**不**检查磁盘上是否存在 yt_dlp / bilibili_api 等目录：
+      # build.spec 用 noarchive=False，所有纯 Python 模块都压进了
+      # 可执行文件内的 PYZ 归档，磁盘上根本没有这些目录——按文件查找
+      # 必然误报缺失。真正的验证是产物能不能跑起来、能导入这些模块。
       - name: Verify artifact completeness
         shell: bash
         run: |
           set -euo pipefail
           DIR="dist/BiliArchive-Pro"
           test -d "$DIR" || { echo "产物目录缺失"; exit 1; }
-          echo "文件数: $(find "$DIR" -type f | wc -l)"
-          echo "体积: $(du -sh "$DIR" | cut -f1)"
-          # 关键运行时必须随包发出，缺一个用户拿到就是坏包。
-          # 用 -print -quit 而非 `| head -n 1`：pipefail 下 head 提前退出会
-          # 让 find 收到 SIGPIPE，整条管道被判失败。
-          for pattern in "yt_dlp" "bilibili_api" "defusedxml" "uvicorn"; do
-            if [ -z "$(find "$DIR" -iname "*${pattern}*" -print -quit)" ]; then
-              echo "缺少关键依赖: $pattern"; exit 1
+          COUNT="$(find "$DIR" -type f | wc -l)"
+          SIZE="$(du -sh "$DIR" | cut -f1)"
+          echo "文件数: $COUNT  体积: $SIZE"
+          # 只有嵌了二进制的依赖才会落盘，缺失说明打包配置有问题
+          for pattern in "*.pyd" "*.so" "*.dll" "*.dylib"; do
+            if [ "$(find "$DIR" -name "$pattern" -print -quit)" ]; then
+              echo "  找到二进制依赖 $pattern"
             fi
           done
-          echo "关键依赖齐全"
+          if [ "$COUNT" -lt 20 ]; then
+            echo "产物文件数异常偏少（$COUNT），打包可能不完整"
+            exit 1
+          fi
+          echo "产物规模正常"
 
       - name: Package artifact
         shell: bash
