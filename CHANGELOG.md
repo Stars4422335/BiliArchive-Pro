@@ -4,6 +4,18 @@
 
 ## [Unreleased]
 
+### 发版流水线修复（v1.7.0 首次发布实测）
+
+`release.yml` 在 v1.7.0 首次真实运行时连续三轮失败，全部是工作流自身的缺陷，现已修复并沉淀到 `DEVELOPER_GUIDE.md`：
+
+- **归档审计改为逐条目匹配**：原先把整个条目清单拼成文本做子串搜索，误将合法的 `webui/src/data/normalize.js` 判为含 `/data/` 而失败。
+- **产物完整性检查纠正原理**：原先在 `dist/` 里查找 `yt_dlp` / `bilibili_api` 等目录，但 `noarchive=False` 已把它们全部压入可执行文件内的 PYZ，该检查永远不可能通过。改为验证产物存在、文件数合理、编译型依赖随包，并用**导入**而非文件查找来确认运行时依赖。
+- **包管理器按平台分支**：`windows-latest` 没有 `sudo`，原先无条件 `sudo apt-get` 直接 127 退出。改为按矩阵变量选 choco / brew / apt，并统一去掉 `sudo`。
+- **校验值改用 Python `hashlib`**：`shasum` 只有 macOS 有，Windows Git Bash 不存在。
+- **修正 `tar` 选项语法**：`-czf` 与文件名之间缺空格会被解析成单个选项串。
+
+修复前均已在本地用模拟产物复现验证，而非继续依赖 CI 试错。
+
 ## [1.7.0] - 2026-10-14
 
 ### 内容摘要（README TODO #4，本地实现）

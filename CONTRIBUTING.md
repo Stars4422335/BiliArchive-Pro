@@ -110,6 +110,15 @@ fix: 损坏的 NFO 不应写入完成状态
 
 **不要提交公开 Issue。** 请使用 [私有漏洞报告](https://github.com/Stars4422335/BiliArchive-Pro/security/advisories/new)，详见 [SECURITY.md](SECURITY.md)。
 
+## 改 CI 工作流前
+
+`.github/workflows/release.yml` 负责三平台打包发布，它踩过的坑集中在 [DEVELOPER_GUIDE.md 的「跨平台脚本踩过的坑」](DEVELOPER_GUIDE.md)。其中几条会直接导致发布失败：
+
+- **不要在 `dist/` 里找纯 Python 包目录**——`noarchive=False` 把它们全压进了可执行文件内的 PYZ，磁盘上不存在
+- **不要无条件 `sudo`**——`windows-latest` 没有 `sudo`，包管理器要按平台分支
+- **不要假设 `shasum` / `sha256sum` 到处都有**——校验值统一用 Python 的 `hashlib`
+- **改之前先在本地用模拟产物跑一遍脚本逻辑**，不要靠 CI 一轮轮试错
+
 ## 许可
 
 贡献的代码以 GPLv3 发布。提交 PR 即表示你同意以此许可授权。

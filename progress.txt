@@ -1,6 +1,45 @@
 BiliArchive-Pro 进度记录
 ========================
 
+## 2026-10-15 - Task: v1.7.0 正式发布 + 发版流水线实战修复（已完成）
+
+### 发布结果:
+- Release: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.7.0
+- 五作业全绿：Source archive / windows-x64 / linux-x64 / macos-arm64 / Publish
+- 产物：windows-x64.zip 36.7MB、macos-arm64.tar.gz 32.1MB、linux-x64.tar.gz 52.6MB
+  （各附 SHA256）+ 源码 ZIP 287.7KB
+
+### 发布过程（连续三轮失败，均为 release.yml 自身缺陷）:
+1. 归档审计把整个条目清单拼成文本做子串搜索 → 误判 webui/src/data/normalize.js
+2. windows-latest 无 sudo，无条件 sudo apt-get → exit 127
+   同时完整性检查在 dist/ 找 yt_dlp 目录 → 但 noarchive=False 把它压进了
+   PYZ，磁盘上根本不存在，该检查永远不可能通过
+3. tar -C dist -czf "NAME" 缺空格 → 解析成单个选项串 → Cannot open
+   shasum 只有 macOS 有 → Windows Git Bash 缺该命令
+4. 全部修复后通过
+
+### 流程改进（本次最重要产出）:
+前三轮都是靠 CI 试错发现问题的。第四轮之前改为**先在本地用模拟的
+PyInstaller 产物复现每段脚本逻辑**（tar 语法、归档清单、checksum 格式、
+完整性检查），全部验证通过后再提交 —— 一次即过。
+
+### 文档沉淀:
+- DEVELOPER_GUIDE.md 新增「跨平台脚本踩过的坑」8 条：
+  子串搜索审计、PYZ 内模块不可磁盘查找、无 sudo 与包管理器分支、
+  shasum/sha256sum 不可移植、pipefail 下 SIGPIPE、tar 选项空格、
+  改前本地复现、tag 移动的边界
+- CONTRIBUTING.md 加「改 CI 工作流前」摘要 + 指向 DEVELOPER_GUIDE
+- CHANGELOG [Unreleased] 记录本次流水线修复（用户可见：发布现在能用）
+- 计划书 F4 追加「v1.7.0 发布实测」小节
+
+### Notes:
+- v1.7.0 tag 被强制更新过三次（每次失败后修正内容再重发）。
+  这是安全的：该 tag 由我数小时内创建，三次发布均失败且未产出任何产物，
+  没有任何用户或下游消费过它。已发布的 Release 与 tag 现已一致
+- 教训中最值得记的一条：**"完整性检查"这类断言必须先确认被检查的对象
+  在原理上存在**。那个 yt_dlp 检查从写下来那天起就永远不可能通过，
+  只是恰好早期仓库里没有触发条件
+
 ## 2026-10-14 - Task: M4 内容摘要（README TODO #4，本地版，已完成）
 
 ### What was done:

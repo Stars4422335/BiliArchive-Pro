@@ -102,11 +102,49 @@ git archive --format=zip --prefix=BiliArchive-Pro-vX.Y.Z/ --output BiliArchive-P
 
 推送 `vX.Y.Z` 标签会触发 `.github/workflows/release.yml`，无需手工执行上述步骤：
 
-1. `source` 作业用 `git archive` 从标签生成源码 ZIP，并**审计条目**：一旦出现 `config.local.yaml`、`data/`、`downloads/`、`venv/` 或本地任务记录即失败。
+1. `source` 作业用 `git archive` 从标签生成源码 ZIP，并**逐条目审计**：去掉归档前缀后，顶层的 `config.local.yaml`、`data/`、`downloads/`、`bin/`、`venv/`、`logs/`、`__pycache__/`、`.mimosa/`、本地任务记录，以及任何 `*.db` / `*.db-wal` / `*.pyc` 都会让作业失败。
 2. `build` 作业在三个**原生 runner** 上并行构建。PyInstaller 不能交叉编译，所以 Windows / macOS / Linux 各占一个 runner，而不是矩阵里可替换的维度。
-3. 每个平台依次执行：归档工具就绪 → PyInstaller 构建 → **`--version` 冒烟并与 `app/__init__.py` 比对版本号** → 关键依赖完整性检查（`yt_dlp` / `bilibili_api` / `defusedxml` / `uvicorn`）→ 打包 → SHA256 → 上传。
+3. 每个平台依次执行：归档工具就绪（按平台选 choco / brew / apt）→ PyInstaller 构建 → **`--version` 冒烟并与 `app/__init__.py` 比对版本号 + 运行时依赖导入检查** → 产物规模检查 → 打包 → SHA256（用 Python 的 `hashlib`）→ 上传。
 4. 全部上传到**草稿 Release**，由 `publish` 作业在三个平台都成功后统一转为正式发布。任一平台失败则不会产生正式 Release。
 
 手工触发：对已有标签执行 `workflow_dispatch` 并填入 tag。
 
 > 冒烟验证是刻意加的：隐藏导入漏依赖或平台差异只会在真正运行时暴露，没有这一步就会把打不开的包发给用户。
+
+### 跨平台脚本踩过的坑
+
+v1.7.0 首次发布连续失败三轮，全部是 `release.yml` 自身的缺陷。改动这个工作流前请先读完这一节。
+
+**1. 不要用子串搜索审计归档内容**
+
+把整个条目清单拼成一段文本再 `case` 匹配子串，会误伤合法路径：`webui/src/data/normalize.js` 里含 `/data/`，却与根目录的 `data/` 毫无关系。**必须逐条目比对**，且要先剥掉 `BiliArchive-Pro-vX.Y.Z/` 前缀——只有前缀之后的位置才有意义。
+
+**2. 不要在 dist/ 里找纯 Python 包目录**
+
+`build.spec` 用 `noarchive=False`，所有纯 Python 模块都压进了可执行文件内部的 PYZ 归档，磁盘上**不存在** `yt_dlp/`、`bilibili_api/` 这类目录。按文件查找的完整性检查永远不可能通过，它此前只是恰好没被触发。
+
+要验证依赖是否齐备，正确做法是**导入**：让产物跑 `--version`（`main.py` 的 import 链已覆盖 `bilibili_api` 与 `app.*`），再对构建环境做一次 `importlib.import_module`。产物完整性则看文件数与编译型依赖（`*.pyd` / `*.so` / `*.dll` / `*.dylib`）是否随包落盘。
+
+**3. GitHub runner 没有 sudo，也各用各的包管理器**
+
+`windows-latest` 根本没有 `sudo`，无条件 `sudo apt-get` 会直接 127 退出。包管理器必须按矩阵变量分支：`choco` / `brew` / `apt`。GitHub runner 上这三个都免密，可以一律去掉 `sudo`。
+
+**4. 不要假设命令行工具在所有平台都存在**
+
+`shasum` 只有 macOS 有，Windows 的 Git Bash 里没有；`sha256sum` 也不是每个 runner 都装了。校验值统一用 Python 的 `hashlib`——三个平台的 runner 都装了 Python。
+
+**5. `set -o pipefail` 下不要用 `| head` / `| grep -q`**
+
+读端提前退出会让写端收到 SIGPIPE，`pipefail` 会把整条管道判为失败，而且失败点离真正的原因很远。需要判断内容时，先把结果捕获进变量，再用 `case` 匹配。
+
+**6. `tar` 的选项与文件名之间必须有空格**
+
+`tar -C dist -czf "${NAME}.tar.gz" DIR` 里 `-czf` 与文件名相邻，会被解析成单个选项串，报 `Cannot open: No such file or directory`。写成 `tar -czf "dist/${NAME}.tar.gz" -C dist DIR`。
+
+**7. 改工作流前先在本地复现**
+
+这三条修复之前都是靠 CI 一轮轮试错发现的，代价是每次都要重跑整个三平台矩阵（数分钟）加上强制移动 tag。正确做法是**先在本地用模拟产物跑一遍脚本逻辑**（tar 语法、归档清单、校验文件格式、完整性检查），全部通过再提交。工作流里的 shell 片段应该能在本地 `bash` 直接执行验证。
+
+**8. tag 可以移动，但要谨慎**
+
+发布失败且未产出任何产物时，强制更新 tag 是合理的（内容修正后重发）。但一旦有用户或下游消费了该 tag，移动它就是破坏性的——移动前先确认 Release 从未成功发布过。
