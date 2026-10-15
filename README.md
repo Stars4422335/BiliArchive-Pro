@@ -3,7 +3,7 @@
 > **带本地 WebUI 的 Bilibili 个人数字资产备份、同步与媒体库整理工具**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Release: v1.6.0](https://img.shields.io/badge/release-v1.6.0-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.6.0)
+[![Release: v1.7.0](https://img.shields.io/badge/release-v1.7.0-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.7.0)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 
 **简体中文** | [English](README.en.md)
@@ -352,9 +352,37 @@ cd webui && npm ci && npm run lint && npm run build
 
 ---
 
-## 🧾 最新改进（v1.6.0）
+## 🧾 最新改进（v1.7.0）
 
 完整版本说明见 [CHANGELOG.md](CHANGELOG.md)。
+
+**性能治理（万级资产实测）**
+
+- WebUI 资产列表 **9.46ms → 0.11ms（87x）**：排序键去掉阻断索引的 `COALESCE()` 表达式，改走覆盖索引。
+- WebUI 计数 **8.12ms → 0.68ms（12x）**；三项查询合计 27.99ms → 14.03ms。
+- 索引在启动时自动创建（旧库无需手工迁移），并**主动删除实测有害的索引**——索引收益高度依赖数据分布。
+- 新增 `system.db_wal`（默认关闭）：WAL 让 WebUI 读取不再阻塞核心写入（5.5s → 15ms）。
+
+**内容摘要（本地，不外发）**
+
+- `summary.enabled` 从字幕抽取式生成摘要，写入 NFO `<outline>`（Plex 情节摘要字段）。
+- **纯本地计算，字幕绝不外发**；`mode: "llm"` 预留但明确拒绝，避免让人误以为内容已发送。
+- 少于两句不做摘要，订阅套话被过滤；多P 只生成一份。
+
+**弹幕词云**
+
+- `wordcloud.enabled` 基于同一份 `.danmaku.xml` 生成 `.wordcloud.svg`，**零新依赖**（bigram 分词 + 标准库拼 SVG），纯本地计算。
+
+**关注源图文投稿**
+
+- `followings.article_types` 可额外同步 UP 主的专栏（图文）投稿，复用收藏夹管线的 Markdown + NFO 流程。
+
+**社区基建**
+
+- 新增 `CONTRIBUTING.md`、Issue 模板（Bug / 功能建议）、PR 模板、`README.en.md` 英文版。
+- 推送版本标签即自动产出 Windows / macOS / Linux 三平台免 Python 环境分发包，含冒烟验证与 SHA256。
+
+### v1.6.0 改进
 
 - WebUI 新增「操作」视图：可下发 `trigger_scan`（立即巡检）、`redownload_asset`（重下单个资产）、`restart`（提示重启核心）三条指令，并查看每条指令的执行回执与审计历史。
 - 新增本地命令通道 `commands.json`（原子写入 + 幂等认领 + 有界审计），复用 `runtime.json` 的解耦哲学，不引入 WebSocket，WebUI 始终不直接连接守护进程。

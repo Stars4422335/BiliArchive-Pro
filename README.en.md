@@ -3,7 +3,7 @@
 > **Back up, sync, and organize your personal Bilibili assets — with a local WebUI**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Release: v1.6.0](https://img.shields.io/badge/release-v1.6.0-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.6.0)
+[![Release: v1.7.0](https://img.shields.io/badge/release-v1.7.0-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.7.0)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 
 [简体中文](README.md) | **English**
@@ -334,9 +334,37 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guide and the a
 
 ---
 
-## 🧾 What's new (v1.6.0)
+## 🧾 What's new (v1.7.0)
 
 Full details in [CHANGELOG.md](CHANGELOG.md).
+
+**Performance (measured against 20k assets)**
+
+- WebUI asset list **9.46ms to 0.11ms (87x)**: the sort key dropped a `COALESCE()` call that blocked index use, so it now walks a covering index.
+- WebUI count **8.12ms to 0.68ms (12x)**; three queries combined 27.99ms to 14.03ms.
+- Indexes are created at startup (existing databases need no migration) and indexes that measurably hurt are dropped — index benefit depends heavily on data distribution.
+- New `system.db_wal` (off by default): WAL stops WebUI reads from blocking core writes (5.5s down to 15ms).
+
+**Content summaries (local, nothing uploaded)**
+
+- `summary.enabled` generates an extractive summary from subtitles into the NFO `<outline>` element (Plex's plot outline field).
+- **Entirely local; subtitles are never uploaded.** `mode: "llm"` is reserved but explicitly refused, so nobody is misled into thinking content was sent.
+- Videos with fewer than two sentences are skipped, subscription filler is filtered, and multi-part videos get a single summary.
+
+**Danmaku word clouds**
+
+- `wordcloud.enabled` generates a `.wordcloud.svg` from the same `.danmaku.xml` with **no new dependencies** (bigram segmentation plus the standard library), fully local.
+
+**Articles for followed creators**
+
+- `followings.article_types` additionally syncs a creator's image-text posts, reusing the favorites pipeline for Markdown and NFO.
+
+**Community infrastructure**
+
+- New `CONTRIBUTING.md`, Issue templates (bug / feature), a PR template, and an English `README.en.md`.
+- Pushing a version tag now automatically produces Windows, macOS, and Linux Python-free distributions, with smoke tests and SHA256 checksums.
+
+### v1.6.0
 
 - The WebUI gained an **Operations** view: dispatch `trigger_scan` (scan now), `redownload_asset` (re-download one asset), and `restart` (request a core restart), and inspect each command's acknowledgement and audit trail.
 - New local command channel `commands.json` (atomic writes, idempotent claiming, bounded audit) reusing the `runtime.json` philosophy. No WebSocket; the WebUI never connects to the daemon directly.

@@ -54,8 +54,8 @@ def test_dockerfile_uses_explicit_runtime_copy_list():
 
 
 def test_release_metadata_is_consistent():
-    expected_version = "1.6.0"
-    expected_date = "2026-10-13"
+    expected_version = "1.7.0"
+    expected_date = "2026-10-14"
     dockerfile = (PROJECT_ROOT / "Dockerfile").read_text(encoding="utf-8")
     readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
     changelog = (PROJECT_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")

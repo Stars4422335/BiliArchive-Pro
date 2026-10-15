@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-10-14
+
 ### 内容摘要（README TODO #4，本地实现）
 
 - 新增 `summary` 配置块（默认 `enabled: false`）：开启后从**字幕文本**抽取式生成摘要，写入 NFO 的 `<outline>` 字段（Plex 的情节摘要字段，媒体库会显示在简介页）。
@@ -224,7 +226,8 @@
 - 如果 `data/cookie.json` 曾被上传、打包或共享，应重新登录，使旧凭据失效。
 - 本版本不提供 EXE 或 App；跨平台独立可执行文件仍属于后续阶段。
 
-[Unreleased]: https://github.com/Stars4422335/BiliArchive-Pro/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/Stars4422335/BiliArchive-Pro/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.7.0
 [1.6.0]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.6.0
 [1.5.0]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.5.0
 [1.4.0]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.4.0
