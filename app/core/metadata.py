@@ -23,18 +23,36 @@ class MetadataGenerator:
             raise ValueError(f"路径越界，已拒绝写入: {candidate_path}")
         return candidate_path
 
-    # 专栏正文中允许下载图片的 CDN 域名（防正文注入外链导致 SSRF）
-    _TRUSTED_IMAGE_HOST_SUFFIXES = (".hdslb.com", ".bilibili.com", "hdslb.com", "bilibili.com")
+    # 专栏正文中允许下载图片的域名（防正文注入外链导致 SSRF）
+    #
+    # 必须按"标签边界"匹配，不能用裸 endswith：`evil-hdslb.com` 与
+    # `notbilibili.com` 同样以这些字符串结尾，用 endswith 会把攻击者
+    # 自有域名放进白名单，SSRF 防护形同虚设。
+    _TRUSTED_IMAGE_HOSTS = frozenset({
+        "hdslb.com",
+        "bilibili.com",
+        "bilivideo.com",
+    })
 
     @classmethod
     def _is_trusted_image_url(cls, img_url):
         try:
             from urllib.parse import urlparse
-            host = urlparse(img_url).hostname or ""
+            parsed = urlparse(img_url)
+            host = parsed.hostname or ""
+            scheme = (parsed.scheme or "").lower()
         except ValueError:
             return False
-        host = host.lower()
-        return any(host == s or host.endswith(s) for s in cls._TRUSTED_IMAGE_HOST_SUFFIXES)
+        # 只接受 https，避免明文传输与本地探测
+        if scheme != "https":
+            return False
+        host = host.lower().rstrip(".")
+        if not host:
+            return False
+        # 标签边界匹配：域名本身，或以 "." + 受信域 开头的子域
+        return host in cls._TRUSTED_IMAGE_HOSTS or any(
+            host.endswith("." + trusted) for trusted in cls._TRUSTED_IMAGE_HOSTS
+        )
 
     @staticmethod
     def _add_common_fields(root, video_info, status="Active"):
