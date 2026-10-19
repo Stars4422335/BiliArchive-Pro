@@ -3,7 +3,7 @@
 > **Back up, sync, and organize your personal Bilibili assets — with a local WebUI**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Release: v1.7.0](https://img.shields.io/badge/release-v1.7.0-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.7.0)
+[![Release: v1.7.1](https://img.shields.io/badge/release-v1.7.1-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.7.1)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 
 [简体中文](README.md) | **English**
@@ -334,9 +334,17 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guide and the a
 
 ---
 
-## 🧾 What's new (v1.7.0)
+## 🧾 What's new (v1.7.1)
 
 Full details in [CHANGELOG.md](CHANGELOG.md).
+
+**Security fix: the article image allowlist could be bypassed**
+
+- The allowlist for images embedded in article bodies matched domains with a bare `endswith`, so `https://evil-hdslb.com/x.jpg` and `https://notbilibili.com/x.jpg` were accepted. An attacker who registers such a domain can make the program fetch from a host they control.
+- Matching is now done **on label boundaries** - the host itself, or a real subdomain beginning with `.` plus a trusted domain - and only `https` is accepted. The defect had been present since the v1.4.0 hardening.
+- Automated regression tests were added for both the allowlist and path containment (38 new cases). Those defenses previously had only a one-off manual check, which is why the defect went unnoticed.
+
+### v1.7.0
 
 **Performance (measured against 20k assets)**
 

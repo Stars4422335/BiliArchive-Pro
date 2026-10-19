@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-10-16
+
 ### 安全修复：专栏图片域名白名单可被绕过
 
 - **修复 SSRF 白名单绕过**：原先用裸 `endswith` 匹配域名，任何以受信串结尾的域名都会通过——`https://evil-hdslb.com/x.jpg` 与 `https://notbilibili.com/x.jpg` 会被放行。攻击者只需注册此类域名，就能让程序向任意主机发起请求，该防护自 v1.4.0 引入起形同虚设。
@@ -246,7 +248,8 @@
 - 如果 `data/cookie.json` 曾被上传、打包或共享，应重新登录，使旧凭据失效。
 - 本版本不提供 EXE 或 App；跨平台独立可执行文件仍属于后续阶段。
 
-[Unreleased]: https://github.com/Stars4422335/BiliArchive-Pro/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/Stars4422335/BiliArchive-Pro/compare/v1.7.1...HEAD
+[1.7.1]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.7.1
 [1.7.0]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.7.0
 [1.6.0]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.6.0
 [1.5.0]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.5.0
