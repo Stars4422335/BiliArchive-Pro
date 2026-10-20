@@ -349,8 +349,10 @@ dist\BiliArchive-Pro\BiliArchive-Pro.exe --version
 pip install -r requirements-dev.txt
 python -m pytest tests
 python -m compileall main.py login.py web.py app
-cd webui && npm ci && npm run lint && npm run build
+cd webui && npm ci && npm run lint && npm test && npm run build
 ```
+
+前端测试用 Vitest + Testing Library（`webui/src/test/`），覆盖 API 参数拼接、分页筛选与运维指令的二次确认流程。
 
 ---
 

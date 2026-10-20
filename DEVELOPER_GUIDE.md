@@ -58,6 +58,7 @@ Windows PowerShell：
 Set-Location webui
 npm.cmd ci
 npm.cmd run lint
+npm.cmd test
 npm.cmd run build
 ```
 
@@ -69,6 +70,7 @@ python -m compileall -q main.py login.py web.py app
 cd webui
 npm ci
 npm run lint
+npm test
 npm run build
 ```
 

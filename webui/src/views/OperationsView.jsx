@@ -129,8 +129,8 @@ export default function OperationsView({ requireAuthentication }) {
           <RedownloadCard
             busy={submitting === "redownload"}
             disabled={Boolean(submitting)}
-            confirming={confirming === "redownload"}
-            onAsk={(assetId) => setConfirming({ key: "redownload", assetId })}
+            confirming={confirming?.kind === "redownload" ? confirming.assetId : null}
+            onAsk={(assetId) => setConfirming({ kind: "redownload", assetId })}
             onCancel={() => setConfirming(null)}
             onRun={(assetId) => submit({ command: "redownload_asset", payload: { asset_id: assetId } }, "redownload")}
           />
@@ -185,13 +185,14 @@ function RedownloadCard({ busy, disabled, confirming, onAsk, onCancel, onRun }) 
   const [assetId, setAssetId] = useState("");
   const trimmed = assetId.trim();
 
+  // confirming 直接是待确认的资产编号（字符串）或 null。
   if (confirming) {
     return <div className="command-card command-card-confirm">
       <h3>确认重新下载该资产？</h3>
-      <p>将重新抓取 <code>{confirming.assetId}</code>。已有本地文件不会被删除，下载结果按原目录规则覆盖写入，并计入本轮下载量。</p>
+      <p>将重新抓取 <code>{confirming}</code>。已有本地文件不会被删除，下载结果按原目录规则覆盖写入，并计入本轮下载量。</p>
       <div className="command-card-actions">
         <button className="button button-secondary button-compact" type="button" onClick={onCancel} disabled={busy}>取消</button>
-        <button className="button button-warning button-compact" type="button" onClick={() => onRun(confirming.assetId)} disabled={busy}>{busy ? "发送中…" : "确认重下"}</button>
+        <button className="button button-warning button-compact" type="button" onClick={() => onRun(confirming)} disabled={busy}>{busy ? "发送中…" : "确认重下"}</button>
       </div>
     </div>;
   }

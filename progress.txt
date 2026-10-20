@@ -1,6 +1,46 @@
 BiliArchive-Pro 进度记录
 ========================
 
+## 2026-10-20 - Task: 前端测试补齐 + 运维指令交互修复
+
+### 发现并修复的真实 bug:
+**「重新下载资产」的二次确认流程完全失效。**
+父组件用对象记录待确认项 `setConfirming({ key: "redownload", assetId })`，
+RedownloadCard 却用字符串比较 `confirming === "redownload"` —— 恒为 false，
+于是用户输入编号点「重新下载」**不会有任何反应**。
+即便修好比较，`confirming.assetId` 取自布尔值也恒为 undefined，
+确认框显示不出编号、下发的指令也不带 asset_id。
+现在待确认项直接携带编号（`confirming?.kind === "redownload"`）。
+
+**为什么之前没发现**：重启路径用的是字符串比较，是对的，所以"看起来正常"。
+只有真正驱动一次重下载交互才会暴露。
+
+### 前端测试基础设施:
+- Vitest 3 + React Testing Library 16 + jsdom 25
+- vite.config.js 追加 test 配置（jsdom 环境 + setup 文件）
+- package.json 追加 `test` / `test:watch` 脚本
+- eslint.config.js 为 src/test/** 单独放行 Node/jsdom 全局
+  （global / Blob / setTimeout 等不在浏览器 globals 白名单里）
+- CI 的 webui 作业新增 `npm test` 步骤
+
+### Testing:
+- client.test.js 11 例：令牌存取、Authorization 头、参数拼接与编码、
+  HTTP/网络/非 JSON 错误、命令下发体
+- assets.test.jsx 13 例：默认分页参数、总条数、翻页、首末页禁用、
+  筛选重置页码、搜索去空格、详情抽屉开关与 Esc、空态与错误
+- operations.test.jsx 9 例：立即巡检直发、重启二次确认（未确认/确认/取消）、
+  重下二次确认（非法编号禁用/确认前不发/确认后带 asset_id）、
+  接口失败提示、401 触发重新认证
+- 前端共 33 例全通过；lint 无告警；build 成功
+
+### Notes:
+- vitest 的 restoreMocks: true 会清掉 vi.mock 工厂里设的 mockResolvedValue，
+  必须在 beforeEach 里重新设置，否则组件因 snapshot 为空而整块不渲染——
+  排查时一度以为是组件问题
+- 错误提示由 catch 里的 setFeedback 异步写入，断言要用 waitFor 包住，
+  直接 findByText 会偶发失败
+- 后端测试仍是 344 passed（前端测试不影响后端）
+
 ## 2026-10-20 - Task: 部署验收与可用性修复（运行/部署/使用 全流程实测）
 
 ### 验收方式（不靠推断，实际跑起来看）:

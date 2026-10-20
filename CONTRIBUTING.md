@@ -33,8 +33,10 @@ cd webui && npm ci && npm run build && cd ..
 ```bash
 python -m pytest tests -q
 python -m compileall -q main.py login.py web.py app
-cd webui && npm run lint && npm run build
+cd webui && npm run lint && npm test && npm run build
 ```
+
+前端测试用 Vitest + Testing Library，位于 `webui/src/test/`。新增交互时**请一并补测试**：CLI 的 ESLint 与 build 都不验证运行时行为，交互回归不会被现有检查捕获。
 
 涉及 `Dockerfile` 或依赖变更时额外执行：
 

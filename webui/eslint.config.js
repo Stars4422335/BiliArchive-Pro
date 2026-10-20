@@ -41,4 +41,30 @@ export default [
       "no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     },
   },
+  {
+    // 测试文件运行在 jsdom + Node 环境，用到 global / Blob / setTimeout 等
+    // 不在浏览器 globals 白名单里的内置对象，单独放行。
+    files: ["src/test/**/*.{js,jsx}"],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "module",
+      globals: {
+        global: "readonly",
+        Blob: "readonly",
+        URL: "readonly",
+        URLSearchParams: "readonly",
+        fetch: "readonly",
+        Headers: "readonly",
+        window: "readonly",
+        document: "readonly",
+        sessionStorage: "readonly",
+        setTimeout: "readonly",
+        clearTimeout: "readonly",
+        setInterval: "readonly",
+        clearInterval: "readonly",
+        process: "readonly",
+        console: "readonly",
+      },
+    },
+  },
 ];
