@@ -107,13 +107,33 @@ def test_ensure_within_rejects_absolute_outside(tmp_path):
 
 @pytest.mark.parametrize("traversal", [
     "../../../etc/passwd",
-    "..\\..\\windows\\system32\\config",
     "subdir/../../../outside.txt",
+    "..",
+    "./../../outside",
 ])
 def test_ensure_within_rejects_traversal_variants(tmp_path, traversal):
+    """平台通用的穿越写法必须被拒绝。
+
+    这里的用例都用 POSIX 风格分隔符，因为它们在 Windows 与 Linux 上
+    都是真正的路径分隔符。反斜杠写法是 Windows 专属，另有一个用例。
+    """
     base = tmp_path / "media"
     base.mkdir()
     candidate = os.path.join(str(base), traversal)
+
+    with pytest.raises(ValueError, match="路径越界"):
+        MetadataGenerator._ensure_within(str(base), candidate)
+
+
+@pytest.mark.skipif(
+    os.name != "nt",
+    reason="反斜杠只在 Windows 上是路径分隔符；在 POSIX 上它是合法文件名字符",
+)
+def test_ensure_within_rejects_windows_style_traversal(tmp_path):
+    """Windows 上的反斜杠穿越必须被拒绝。"""
+    base = tmp_path / "media"
+    base.mkdir()
+    candidate = os.path.join(str(base), "..\\..\\windows\\system32\\config")
 
     with pytest.raises(ValueError, match="路径越界"):
         MetadataGenerator._ensure_within(str(base), candidate)
