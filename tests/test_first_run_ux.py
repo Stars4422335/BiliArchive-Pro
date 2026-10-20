@@ -60,8 +60,25 @@ def test_transient_failures_are_not_auth_failures():
         assert main._is_auth_failure(_Plain(message)) is False, message
 
 
-def test_auth_failure_ignores_other_response_codes():
-    exc = _AuthError({"code": -400, "message": "请求错误"}, "请求错误")
+def test_non_auth_response_codes_are_not_auth_failures():
+    """-400（请求错误）、-509（请求过于频繁）都不是鉴权问题。
+
+    把它们算作鉴权失败会让守护进程在普通请求错误时也退出，
+    并误导用户去重新登录——而重新登录解决不了请求错误。
+    """
+    for code, message in (
+        (-400, "请求错误"),
+        (-509, "请求过于频繁"),
+        (-404, "无此项"),
+    ):
+        exc = _AuthError({"code": code, "message": message, "ttl": 1}, message)
+        assert main._is_auth_failure(exc) is False, f"{code} 不应被视为鉴权失败"
+
+
+def test_csrf_failure_counts_as_auth_failure():
+    """-111 是 csrf 校验失败，csrf token 来自 cookie，属凭据问题。"""
+    exc = _AuthError({"code": -111, "message": "csrf 校验失败", "ttl": 1}, "csrf 校验失败")
+
     assert main._is_auth_failure(exc) is True
 
 

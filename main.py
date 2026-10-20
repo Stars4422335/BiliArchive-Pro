@@ -185,7 +185,10 @@ def _is_auth_failure(exc):
         code = raw
         message = ""
 
-    if code in (-101, -111, -400):
+    # B 站错误码（见 bilibili-API-collect）：
+    #   -101 账号未登录 / -111 csrf 校验失败 —— 两者都源于凭据失效
+    #   -400 请求错误 / -509 请求过于频繁 —— 都不是鉴权问题，不能据此退出
+    if code in (-101, -111):
         return True
 
     text = f"{message} {exc}".lower()
