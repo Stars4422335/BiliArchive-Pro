@@ -1,6 +1,34 @@
 BiliArchive-Pro 进度记录
 ========================
 
+## 2026-10-20 - Task: CI 平台化修正（Linux 上失败的测试）
+
+### 问题:
+推送后 CI 红了：Ubuntu 上的 Python 3.10 / 3.12 作业失败，Windows 全绿。
+失败用例是 test_security_paths.py 里的
+`test_ensure_within_rejects_traversal_variants[..\..\windows\system32\config]`。
+
+### 根因（是测试错了，不是生产代码错了）:
+反斜杠在 Windows 上是路径分隔符，在 POSIX 上是**合法文件名字符**。
+`base/..\..\windows\system32\config` 在 Linux 上就是一个名字很怪的文件，
+路径仍在基目录内，**根本没有越界**——所以不抛 ValueError 是正确行为。
+本地是 Windows，这个差异看不出来；CI 的 Linux 才暴露。
+
+### 修复:
+- 通用用例改用两个平台都是分隔符的正斜杠写法
+  （../../../etc/passwd、subdir/../../../outside.txt、..、./../../outside）
+- 反斜杠写法拆成带 pytest.mark.skipif(os.name != "nt") 的 Windows 专属用例
+- 推送前用 posixpath 模拟 POSIX 语义验证：4 个通用用例全部拒绝、
+  反斜杠用例在 POSIX 上正确地不算穿越、目录内正常路径放行
+
+### Notes:
+- **CI 红了先怀疑测试的假设，而不是生产代码**。路径穿越防护在两边都是对的，
+  错的是我断言"反斜杠在任何平台都构成穿越"
+- 这类平台差异本地永远查不出来——本地只有 Windows，Linux 只有 CI 有。
+  已把这条与"路径测试要按平台区分""前端测试两个坑"写进 DEVELOPER_GUIDE
+- 本轮共 3 个提交：46f3089（平台修正）、5bf97fc（前端测试+交互修复）、
+  d8fa122（可用性修复）
+
 ## 2026-10-20 - Task: 前端测试补齐 + 运维指令交互修复
 
 ### 发现并修复的真实 bug:
