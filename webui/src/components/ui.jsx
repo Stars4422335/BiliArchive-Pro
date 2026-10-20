@@ -12,6 +12,7 @@ export function IconButton({ label, children, className = "", ...props }) {
 export function StatusBadge({ status = "idle", children }) {
   const normalized = String(status).toLowerCase();
   const tone = normalized.includes("error") || normalized.includes("fail") || normalized.includes("tombstone") ? "danger" :
+    normalized.includes("offline") || normalized.includes("not_running") ? "offline" :
     normalized.includes("scan") || normalized.includes("run") || normalized === "starting" ? "warning" :
       normalized.includes("complete") || normalized.includes("success") || normalized === "ready" || normalized === "protected" || normalized === "active" ? "success" : "neutral";
   return <span className={`status-badge status-${tone}`}><span className="status-dot" />{children}</span>;

@@ -53,6 +53,14 @@ export function normalizeDashboard(payload) {
   const assetStats = data.assets || {};
   const typeCounts = assetStats.type_counts || {};
   return {
+    // 后端综合 runtime.json 的 status 与 stopped_at 判断核心是否在跑
+    // （只留文件不算在跑，kill -9 留下的陈旧文件也不算）。
+    // 前端只在字段缺失时兜底，避免把"已停止"显示成"扫描中"。
+    core_running: data.core_running ?? (
+      Boolean(runtime.status)
+      && !runtime.stopped_at
+      && !["stopped", "complete", "completed", "offline", "error", "failed"].includes(String(runtime.status || "").toLowerCase())
+    ),
     stats: {
       total_assets: data.stats?.total_assets ?? assetStats.total ?? data.total_assets ?? 0,
       videos: data.stats?.videos ?? typeCounts.video ?? data.videos ?? 0,

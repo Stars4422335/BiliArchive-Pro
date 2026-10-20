@@ -44,6 +44,23 @@ class RuntimeStateWriter:
             self._write()
             return dict(self._state)
 
+    def stop(self, message="核心引擎已停止"):
+        """标记守护进程已结束。
+
+        WebUI 依据这个标记区分"核心空闲待下一轮"与"核心已经停了"。
+        runtime.json 在引擎停止后仍留在磁盘上（保留最后一次状态供查阅），
+        仅凭文件存在无法判断核心是否在跑。
+        """
+        with self._lock:
+            self._state["status"] = "stopped"
+            self._state["phase"] = "stopped"
+            self._state["message"] = message
+            self._state["next_scan_at"] = None
+            self._state["stopped_at"] = _now_text()
+            self._state["updated_at"] = _now_text()
+            self._write()
+            return dict(self._state)
+
     def schedule_next_scan(self, seconds, **changes):
         next_scan = datetime.now().astimezone() + timedelta(seconds=max(0, seconds))
         changes["next_scan_at"] = next_scan.isoformat(timespec="seconds")

@@ -1,6 +1,57 @@
 BiliArchive-Pro 进度记录
 ========================
 
+## 2026-10-20 - Task: 部署验收与可用性修复（运行/部署/使用 全流程实测）
+
+### 验收方式（不靠推断，实际跑起来看）:
+- WebUI 后端真启动（uvicorn），/api/health /api/dashboard /api/assets /api/config
+  /api/commands 全部 200，且返回真实数据（8 个真实 B 站资产）
+- 核心引擎真启动：配置加载 → 登录校验 → 守护启动 → 收藏夹扫描（3 次重试）
+  → 优雅降级 → 继续下一来源，全流程跑通
+- docker compose config 校验通过（含 --profile webui）
+- 浏览器验收：定位到**内置浏览器的 fetch 本身失效**——用 20 行原生 HTML 探针
+  复现（同样 pending），与本项目无关；改用 curl 等价验收
+
+### 修复的三个真实问题:
+1. **登录失效时空转 6 小时**：check_cookie 原本在凭据失效后仍返回凭据对象，
+   daemon 带死 cookie 跑完整个休眠周期。新增 _is_auth_failure() 区分
+   「鉴权失败」与「临时故障」：前者立即退出并提示重新登录，后者保持宽松
+   （公开视频仍可下载）。
+2. **WebUI 分不清「核心没跑」与「核心空闲」**：runtime.json 停止后仍留磁盘上，
+   前端两者都显示成「等待扫描」。新增 API 字段 core_running，概览页显示
+   醒目提示条 + 启动命令。判据同时看 status 与 stopped_at 标记，
+   kill -9 留下的陈旧文件也不会误判。
+3. **每次退出刷出看不懂的 traceback**：bilibili_api 的 atexit 清理分支写反
+   （if loop.is_closed(): loop.run_until_complete(...)），导致每次正常退出
+   都抛 "Event loop is closed"。关闭 loop 后置空当前事件循环，让它的
+   except RuntimeError 分支安静返回。不改动第三方库。
+
+### Testing:
+- 新增 tests/test_first_run_ux.py 22 例
+  * 鉴权失败识别（-101 / LoginError / 消息语义）
+  * 临时故障不被误判（超时/连接重置/5xx）
+  * check_cookie 在两种情形下的不同返回
+  * core_running 的状态组合（含 stopped_at 与陈旧文件）
+  * RuntimeStateWriter.stop() 的落盘内容
+- 全量 344 passed（322 + 22）
+- 前端 lint 无告警，build 成功
+
+### 端到端复验:
+- 植入陈旧 runtime.json（status=idle，无 stopped_at）→ 启动 daemon（登录失效）
+  → 状态被正确改为 stopped + stopped_at + "核心引擎未启动：登录凭据不可用"
+- stderr 为空，不再有 Event loop is closed
+
+### 附带产出:
+- README 新增「❓ 常见问题」章节（登录过期/核心未运行/ffmpeg 缺失/来源同步失败/
+  封面NFO缺失/令牌/只抓视频），README.en.md 同步
+
+### Notes:
+- 本机 cookie 已过期（B 站返回 -101），这反而成了绝佳的测试用例：
+  正好覆盖"凭据失效"这条路径
+- 内置浏览器的 fetch 失效是环境限制，不是项目缺陷。已用最小原生 HTML 探针
+  证实（同样 pending），排除了项目代码的可能
+- 下一步补前端测试（当前 0 个测试文件）
+
 ## 2026-10-16 - Task: 安全修复 —— 专栏图片 SSRF 白名单绕过（已完成）
 
 ### 发现:

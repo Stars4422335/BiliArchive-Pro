@@ -9,6 +9,7 @@ else:
 import json
 import asyncio
 import argparse
+from datetime import datetime
 from bilibili_api import register_client, request_settings, Credential, user
 from bilibili_api.clients.HTTPXClient import HTTPXClient
 from app import __version__
@@ -155,8 +156,52 @@ async def _sleep_until_next_scan(channel, scanner, runtime, scan_interval, pendi
         await asyncio.sleep(min(COMMAND_POLL_INTERVAL, remaining))
 
 
+def _is_auth_failure(exc):
+    """判断异常是否代表"凭据确定已失效"，而非临时故障。
+
+    B 站在 Cookie 过期时返回 -101 账号未登录。此时所有需要登录的来源
+    （收藏夹 / 稍后再看 / 关注列表 / 观看历史）都会失败，守护进程会
+    带着死凭据空转整个休眠周期。与其这样，不如在启动时明确失败并
+    提示重新登录。
+
+    区分标准：
+    - 明确的未登录语义（-101 / 未登录 / SESSDATA 失效 / 登录已过期）
+    - 明确的鉴权异常类型（LoginError）
+
+    网络抖动、超时、5xx 等临时故障不算鉴权失败——那类问题下
+    公开视频仍可下载，保持原有的宽松行为。
+    """
+    from bilibili_api.exceptions import LoginError
+
+    if isinstance(exc, LoginError):
+        return True
+
+    # bilibili_api 的 ResponseCodeException 把整段 raw 塞进 .code
+    raw = getattr(exc, "code", None)
+    if isinstance(raw, dict):
+        code = raw.get("code")
+        message = str(raw.get("message") or "")
+    else:
+        code = raw
+        message = ""
+
+    if code in (-101, -111, -400):
+        return True
+
+    text = f"{message} {exc}".lower()
+    markers = ("未登录", "账号未登录", "sessdata", "登录已过期", "登录过期", "not logged in")
+    return any(marker in text for marker in markers)
+
+
 async def check_cookie(cookie_path):
-    """验证登录凭证健康度"""
+    """校验登录凭据。
+
+    返回 (credential, uid)：
+    - 凭据有效时返回真实对象；
+    - 凭据确定失效（未登录）时返回 (None, None)，调用方应终止——
+      所有需要登录的来源都会失败，继续空转没有意义；
+    - 临时故障（网络抖动等）时仍返回凭据对象，公开视频仍可下载。
+    """
     if not os.path.exists(cookie_path):
         print("[-] 尚未登录！(未发现 cookie.json)")
         print("[!] 请先运行 python login.py 扫码生成凭据！")
@@ -185,8 +230,31 @@ async def check_cookie(cookie_path):
         return cred, uid
     except Exception as e:
         print(f"[-] 凭证失效或验证报错: {e}")
+        if _is_auth_failure(e):
+            print("[!] 登录凭据已失效，收藏夹 / 稍后再看 / 关注列表等来源都需要登录。")
+            print("[!] 请重新运行 python login.py 扫码登录后重启核心进程。")
+            return None, None
+        # 临时故障（网络抖动等）：公开视频仍可强行下载，保持宽松处理
         print("[!] 建议重新运行 python login.py 扫码登录。")
-        return cred, uid # 即使失败也返回，部分公开视频仍可强行下载
+        return cred, uid
+
+
+def _mark_core_stopped(config, message):
+    """把运行状态标记为已停止，供 WebUI 正确显示"核心未运行"。
+
+    守护进程若在启动早期就退出（登录失效等），runtime.json 里可能还留着
+    上一次的陈旧状态，WebUI 会据此误判核心仍在运行。
+    """
+    state_path = runtime_state_path(config)
+    if not state_path:
+        return False
+    try:
+        writer = RuntimeStateWriter(state_path)
+        writer.stop(message)
+        return True
+    except Exception as exc:
+        print(f"[!] 写入停止状态失败（不影响退出）: {exc}")
+        return False
 
 
 async def _run_source_scan(label, operation):
@@ -270,6 +338,14 @@ async def daemon_loop(config, cred, uid):
     finally:
         if db is not None:
             db.close()
+        # 退出时补写 stopped_at：WebUI 靠它区分"这次正常停的"与
+        # "上次留下的陈旧文件"。只有 status 而没有时间戳时，
+        # 一个被强杀（kill -9）留下的 runtime.json 会被误读成"仍在运行"。
+        if runtime is not None:
+            try:
+                runtime.update(stopped_at=datetime.now().astimezone().isoformat(timespec="seconds"))
+            except Exception:
+                pass
 
 
 async def _run_scan_loop(config, cred, uid, db, runtime=None):
@@ -629,6 +705,10 @@ if __name__ == "__main__":
                 check_cookie(config['system']['cookie_path'])
             )
             if not cred:
+                # check_cookie 已经打印了具体原因（未登录 / 凭据失效），
+                # 这里只补一句退出说明，避免用户以为是程序崩溃。
+                print("[!] 核心引擎未启动：请先完成登录后重试。")
+                _mark_core_stopped(config, "核心引擎未启动：登录凭据不可用")
                 raise SystemExit(1)
 
             daemon_task = loop.create_task(daemon_loop(config, cred, uid))
@@ -643,6 +723,12 @@ if __name__ == "__main__":
                     pass
         finally:
             loop.close()
+            # bilibili_api 的 atexit 清理写反了分支：它在 loop 已关闭时反而
+            # 调用 run_until_complete，导致每次正常退出都抛
+            # "Event loop is closed" 并刷出一段看不懂的 traceback。
+            # 置空当前事件循环后，它的 except RuntimeError 分支会安静返回。
+            # 只影响本进程内的清理时机，不改变任何业务行为。
+            asyncio.set_event_loop(None)
     else:
         print("[!] 请加上 --cli 参数运行： python main.py --cli")
         print("[!] 桌面 GUI 托盘模式正在开发中。")

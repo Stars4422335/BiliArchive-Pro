@@ -399,6 +399,41 @@ See [CHANGELOG.md](CHANGELOG.md) for v1.3.0 and below (WebUI introduction, Plex 
 
 ---
 
+## ❓ Troubleshooting
+
+**The process exits immediately with "login credential has expired"**
+Cookies expire (usually every few months). Scan the QR code again:
+
+```bash
+python login.py
+```
+
+The program distinguishes a genuinely expired credential from a transient network error: the first exits immediately and tells you to log in again, the second keeps going since public videos do not require a login.
+
+**The overview says "core engine is not running"**
+That is the real state, not a page bug. `runtime.json` stays on disk after the engine stops, so the program now reports explicitly whether the engine is actually running. Start it with:
+
+```bash
+python main.py --cli
+```
+
+**Downloads fail with "ffmpeg not found"**
+Muxing audio and video requires FFmpeg. Use `sudo apt install ffmpeg` on Linux, or download it from [ffmpeg.org](https://ffmpeg.org/download.html) on Windows / macOS and place it in the project's `bin/` directory. The program never downloads it for you.
+
+**"A source failed to sync"**
+A single failing source does not stop the others. The usual cause is a deleted or invalid favorite ID - check the IDs in `favorites` / `sync_collections` against `config.yaml`.
+
+**A video downloaded without cover art or NFO**
+When the key NFO or standard poster cannot be written, the program deliberately does **not** record completion, so the next round retries automatically. If it keeps failing, check that the media directory is writable and that the disk is not full (`system.min_disk_gb`).
+
+**The WebUI asks for a management token**
+A token is mandatory when listening on a non-loopback address. The default bind is `127.0.0.1`, so local use needs no token.
+
+**How do I archive videos only, without articles?**
+`followings.mode` controls video submissions from followed creators. Articles are controlled separately by `followings.article_types`; leave it at `off` (the default).
+
+---
+
 ## 📋 Feature status
 
 ### 🟢 Core (implemented)

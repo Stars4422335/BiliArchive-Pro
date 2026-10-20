@@ -284,6 +284,8 @@ python web.py --host 0.0.0.0 --port 8000
 
 WebAPI 使用 SQLite `mode=ro` 浏览资产，不创建或迁移数据库。设置页只允许修改公开白名单字段，并原子写入本地覆盖配置；路径、Cookie 和代理地址不会通过 WebUI 暴露或修改。保存后重启核心进程以应用新配置。
 
+**核心引擎未运行时**，概览页会显示醒目的提示条并给出启动命令，而不是含糊的「等待扫描」——因为 `runtime.json` 在引擎停止后仍会留在磁盘上，仅凭它无法判断核心是否在跑。
+
 ### 4. 从 WebUI 下发运维指令（v1.6.0 起）
 
 WebUI 新增「操作」视图，可直接向核心引擎下发指令，无需 SSH：
@@ -450,6 +452,41 @@ cd webui && npm ci && npm run lint && npm run build
 - 下载时依次查找配置路径和系统 PATH，不会隐式下载可执行文件；组件自动更新只在启用启动检查且策略为 `auto` 时执行。
 - `ffmpeg` 不存在时会提示按系统安装或配置本地路径，不会自动下载。
 - 补齐运行依赖，并新增 pytest 基础测试覆盖核心路径、数据库、NFO 和运行配置。
+
+---
+
+## ❓ 常见问题
+
+**启动后立刻退出，提示"登录凭据已失效"**
+Cookie 有有效期（通常几个月）。重新扫码登录即可：
+
+```bash
+python login.py
+```
+
+程序会区分"凭据确实失效"和"网络临时抖动"：前者立即退出并提示，后者仍会继续（公开视频不依赖登录）。
+
+**WebUI 概览页显示"核心引擎未运行"**
+这是真实状态，不是页面 bug。`runtime.json` 在引擎停止后仍留在磁盘上，所以程序改为显式判断引擎是否真的在跑。启动核心引擎即可：
+
+```bash
+python main.py --cli
+```
+
+**下载失败，提示找不到 ffmpeg**
+合并音视频需要 FFmpeg。Linux 用 `sudo apt install ffmpeg`，Windows / macOS 从 [ffmpeg.org](https://ffmpeg.org/download.html) 下载后放进项目的 `bin/` 目录。程序不会自动下载它。
+
+**提示"某个来源同步失败"**
+单个来源失败不影响其他来源继续扫描。常见原因是收藏夹 ID 已失效或该收藏夹已删除。用 `config.yaml` 核对 `favorites` / `sync_collections` 里的 ID。
+
+**下载的视频没有封面 / NFO**
+关键 NFO 或标准封面写入失败时，程序**不会**记录完成状态，下一轮会自动重试。若反复失败，检查媒体目录是否可写、以及磁盘是否已满（`system.min_disk_gb`）。
+
+**WebUI 提示"需要管理令牌"**
+非 loopback 地址监听时必须配置 `BILIARCHIVE_WEB_TOKEN`。默认只监听 `127.0.0.1`，本地使用无需令牌。
+
+**如何只归档视频、不抓专栏**
+`followings.mode` 控制关注源的视频投稿；专栏由 `followings.article_types` 单独控制，设为 `off`（默认）即可。
 
 ---
 

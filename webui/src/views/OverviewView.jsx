@@ -1,4 +1,4 @@
-import { ArrowRight, Clock3, Database, HardDrive, RefreshCw, ScanLine } from "lucide-react";
+import { ArrowRight, Clock3, Database, HardDrive, PowerOff, RefreshCw, ScanLine } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { assetTitle, assetType, formatDate } from "../data/normalize";
@@ -27,8 +27,9 @@ export default function OverviewView({ dashboard, loading, error, onRetry, onRef
       {error && <ErrorState message={error} onRetry={onRetry} />}
       {dashboard && (
         <>
+          {!dashboard.core_running && <CoreOfflineNotice />}
           <section className="scan-status-section" aria-labelledby="scan-status-title">
-            <div className="section-heading"><div><h2 id="scan-status-title">扫描状态</h2><p>{dashboard.scan.message || "后台扫描任务的最近一次状态。"}</p></div><StatusBadge status={dashboard.scan.status}>{scanLabels[dashboard.scan.status] || dashboard.scan.status}</StatusBadge></div>
+            <div className="section-heading"><div><h2 id="scan-status-title">扫描状态</h2><p>{dashboard.scan.message || (dashboard.core_running ? "后台扫描任务的最近一次状态。" : "核心引擎未运行，下方数据来自本地数据库。")}</p></div><StatusBadge status={dashboard.core_running ? dashboard.scan.status : "offline"}>{dashboard.core_running ? (scanLabels[dashboard.scan.status] || dashboard.scan.status) : "核心未运行"}</StatusBadge></div>
             <div className="scan-status-grid">
               <div><span>最近扫描</span><strong>{formatDate(dashboard.scan.last_scan_at)}</strong></div>
               <div><span>下次扫描</span><strong>{formatDate(dashboard.scan.next_scan_at)}</strong></div>
@@ -50,6 +51,19 @@ export default function OverviewView({ dashboard, loading, error, onRetry, onRef
           </section>
         </>
       )}
+    </div>
+  );
+}
+
+function CoreOfflineNotice() {
+  return (
+    <div className="state-block state-warning" role="status">
+      <PowerOff size={20} aria-hidden="true" />
+      <div>
+        <strong>核心引擎未运行</strong>
+        <span>管理面板可以浏览已归档的资产，但不会产生新的扫描或下载。启动核心引擎后即可自动巡检。</span>
+        <code>python main.py --cli</code>
+      </div>
     </div>
   );
 }
