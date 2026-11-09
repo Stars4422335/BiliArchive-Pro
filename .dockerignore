@@ -29,10 +29,14 @@ webui/dist
 output/playwright
 
 # Development and release-only files
-tests
 build.spec
 BiliArchive-Pro-v*.zip
 本地任务计划与执行表.md
+
+# tests/ stays in the build context: the backend-test image target runs it.
+# The runtime image never copies it in.
+!tests
+!tests/**
 
 # Host operating-system files
 .DS_Store

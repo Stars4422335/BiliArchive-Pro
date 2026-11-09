@@ -96,6 +96,7 @@ def create_app(
         type: str | None = Query(default=None),
         page: int = Query(default=1),
         page_size: int = Query(default=20),
+        cursor: str | None = Query(default=None),
     ) -> dict:
         try:
             return service.assets(
@@ -104,6 +105,7 @@ def create_app(
                 asset_type=type,
                 page=page,
                 page_size=page_size,
+                cursor=cursor,
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc

@@ -15,13 +15,18 @@ export default function AssetsView({ assets, loading, error, onLoad }) {
   const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState(null);
+  // The cursor that opens each page. It is learned from the previous page's
+  // response, so a deep page costs an index seek instead of an OFFSET scan.
+  const [cursors, setCursors] = useState({});
+  const cursorForPage = cursors[page];
   const parameters = useMemo(() => ({
     query: query.trim(),
     type: typeFilter,
     status: statusFilter,
     page,
     page_size: PAGE_SIZE,
-  }), [page, query, statusFilter, typeFilter]);
+    ...(cursorForPage ? { cursor: cursorForPage } : {}),
+  }), [page, query, statusFilter, typeFilter, cursorForPage]);
   const refresh = useCallback(() => onLoad(parameters), [onLoad, parameters]);
   const currentItems = assets?.items || [];
   const pages = Math.max(1, Math.ceil((assets?.total || 0) / PAGE_SIZE));
@@ -35,7 +40,13 @@ export default function AssetsView({ assets, loading, error, onLoad }) {
     if (assets && page > pages) setPage(pages);
   }, [assets, page, pages]);
 
-  function updateFilter(setter, value) { setter(value); setPage(1); }
+  useEffect(() => {
+    const next = assets?.next_cursor;
+    if (!next) return;
+    setCursors((current) => (current[page + 1] === next ? current : { ...current, [page + 1]: next }));
+  }, [assets?.next_cursor, page]);
+
+  function updateFilter(setter, value) { setter(value); setPage(1); setCursors({}); }
 
   return (
     <div className="view-stack">

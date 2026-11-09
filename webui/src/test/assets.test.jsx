@@ -87,6 +87,21 @@ describe("分页", () => {
     expect(await screen.findByRole("button", { name: "上一页" })).toBeDisabled();
   });
 
+  it("下一页带上上一页返回的游标", async () => {
+    const { api } = await import("../api/client");
+    // 游标随响应回来；深分页时前端用它代替 OFFSET 翻页。
+    const firstPage = { ...assetsResponse(25), next_cursor: "Y3Vyc29yLXQ" };
+    render(<AssetsView assets={firstPage} loading={false} error="" onLoad={api.getAssets} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "下一页" }));
+
+    await waitFor(() => {
+      expect(api.getAssets).toHaveBeenCalledWith(
+        expect.objectContaining({ page: 2, cursor: "Y3Vyc29yLXQ" })
+      );
+    });
+  });
+
   it("最后一页时下一页按钮禁用", async () => {
     const { api } = await import("../api/client");
     render(<AssetsView assets={assetsResponse(25)} loading={false} error="" onLoad={api.getAssets} />);

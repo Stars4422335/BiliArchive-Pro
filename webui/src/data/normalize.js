@@ -90,6 +90,9 @@ export function normalizeAssets(payload) {
     total: data.total ?? items.length,
     page: data.page ?? 1,
     page_size: data.page_size ?? items.length,
+    // The cursor of the last row: the next page can be fetched with it
+    // instead of an OFFSET, so deep pages stop scanning the table.
+    next_cursor: data.next_cursor || "",
   };
 }
 

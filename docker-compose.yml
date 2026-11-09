@@ -28,3 +28,24 @@ services:
       - TZ=Asia/Shanghai
       - BILIARCHIVE_LOCAL_CONFIG_PATH=/app/data/config.local.yaml
       - BILIARCHIVE_WEB_TOKEN=${BILIARCHIVE_WEB_TOKEN:-}
+
+  # ---------- test profile ----------
+  # `docker compose --profile test run --rm backend-test`
+  # `docker compose --profile test run --rm webui-test`
+  # Both build their own image target and remove the container when it exits.
+
+  backend-test:
+    build:
+      context: .
+      target: backend-test
+    container_name: biliarchive-pro-backend-test
+    profiles: ["test"]
+    restart: "no"
+
+  webui-test:
+    build:
+      context: .
+      target: webui-test
+    container_name: biliarchive-pro-webui-test
+    profiles: ["test"]
+    restart: "no"

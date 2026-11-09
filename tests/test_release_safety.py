@@ -1,10 +1,24 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from app import __version__
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LOCAL_PLAN = "本地任务计划与执行表.md"
+
+#: These tests read the packaging metadata (Dockerfile, .dockerignore,
+#: .gitignore, README, CHANGELOG). The runtime image deliberately does not
+#: carry it, and Docker refuses to COPY .dockerignore into an image at all,
+#: so the image test job skips them and the plain CI test job - which runs
+#: on a full checkout - is the one that enforces them.
+REPO_METADATA_PRESENT = (PROJECT_ROOT / "Dockerfile").is_file()
+
+needs_repo_metadata = pytest.mark.skipif(
+    not REPO_METADATA_PRESENT,
+    reason="仓库元数据不在测试镜像里；CI 的普通测试作业会在完整检出上检查它",
+)
 
 
 def _patterns(path):
@@ -15,6 +29,7 @@ def _patterns(path):
     }
 
 
+@needs_repo_metadata
 def test_local_state_is_excluded_from_git_and_docker():
     git_patterns = _patterns(PROJECT_ROOT / ".gitignore")
     docker_patterns = _patterns(PROJECT_ROOT / ".dockerignore")
@@ -41,6 +56,7 @@ def test_local_state_is_excluded_from_git_and_docker():
     } <= docker_patterns
 
 
+@needs_repo_metadata
 def test_dockerfile_uses_explicit_runtime_copy_list():
     dockerfile = (PROJECT_ROOT / "Dockerfile").read_text(encoding="utf-8")
 
@@ -52,6 +68,7 @@ def test_dockerfile_uses_explicit_runtime_copy_list():
     assert LOCAL_PLAN not in dockerfile
 
 
+@needs_repo_metadata
 def test_release_metadata_is_consistent():
     expected_version = "1.7.1"
     expected_date = "2026-10-16"

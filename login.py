@@ -1,7 +1,9 @@
+import argparse
 import asyncio
 import json
 import os
 import sys
+import time
 
 # 切换工作目录到程序所在目录，避免在其他路径运行脚本时相对路径解析错误。
 # PyInstaller 打包后 __file__ 指向 bootloader 临时目录，必须改用 exe 自身路径。
@@ -132,7 +134,68 @@ async def login_by_sms():
         print("\n[!] 建议：在 Windows/Mac 本地使用二维码方式登录")
         return False
 
+async def login_by_qrcode_png(out_path, timeout_seconds=180):
+    """非交互扫码：把二维码写成 PNG，等待手机 App 确认后保存凭据。
+
+    终端二维码在自动化流程里没法被人扫到，所以这条路径把二维码落到
+    一个图片文件里，由调用方把它交给用户扫。
+    """
+    qr = QrCodeLogin()
+    await qr.generate_qrcode()
+
+    picture = qr.get_qrcode_picture()
+    target = os.path.abspath(out_path)
+    os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
+    with open(target, "wb") as handle:
+        handle.write(picture.content)
+    print(f"[*] 二维码已写入: {target}")
+    print("[*] 请用 B 站手机 App 扫描该图片并确认登录。")
+
+    deadline = time.monotonic() + max(1, int(timeout_seconds))
+    while time.monotonic() < deadline:
+        state = await qr.check_state()
+        if state == QrCodeLoginEvents.DONE:
+            await save_credential(qr.get_credential())
+            return True
+        if state == QrCodeLoginEvents.TIMEOUT:
+            print("[-] 二维码已过期，请重新运行。")
+            return False
+        if state == QrCodeLoginEvents.CONF:
+            print("[*] 已在手机上确认，等待登录完成...")
+        await asyncio.sleep(1.5)
+
+    print("[-] 等待扫码确认超时，请重新运行。")
+    return False
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="BiliArchive-Pro 登录")
+    parser.add_argument(
+        "--qr",
+        action="store_true",
+        help="非交互扫码：把二维码写成 PNG 图片后等待手机确认",
+    )
+    parser.add_argument(
+        "--qr-out",
+        default="./data/login-qr.png",
+        help="--qr 模式下二维码 PNG 的输出路径",
+    )
+    parser.add_argument(
+        "--qr-timeout",
+        type=int,
+        default=180,
+        help="--qr 模式下等待扫码确认的秒数",
+    )
+    return parser.parse_args()
+
+
 async def main():
+    args = parse_args()
+
+    if args.qr:
+        success = await login_by_qrcode_png(args.qr_out, args.qr_timeout)
+        raise SystemExit(0 if success else 1)
+
     print("=" * 60)
     print("       BiliArchive-Pro 登录系统")
     print("=" * 60)

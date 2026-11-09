@@ -6,6 +6,7 @@ never writes, migrates or creates it.
 
 from __future__ import annotations
 
+import base64
 import os
 import sqlite3
 from pathlib import Path
@@ -17,6 +18,10 @@ STATUS_NAMES = {
     "protected": 2,
 }
 
+#: Separator between the two cursor fields. It cannot appear in an ISO
+#: timestamp nor in a bvid, so the pair never becomes ambiguous.
+_CURSOR_SEPARATOR = "\x1f"
+
 
 def _asset_from_row(row: sqlite3.Row) -> dict[str, Any]:
     item = dict(row)
@@ -26,6 +31,30 @@ def _asset_from_row(row: sqlite3.Row) -> dict[str, Any]:
 
 class AssetsMixin:
     """Listing assets and locating their cover art."""
+
+    @staticmethod
+    def _encode_cursor(row: sqlite3.Row) -> str:
+        """Encode the sort key of the last row of a page.
+
+        The sort key is (last_check, bvid): the assets table has an index on
+        exactly that pair, so a cursor walks the index instead of scanning
+        and discarding the rows before it.
+        """
+        raw = f"{row['last_check'] or ''}{_CURSOR_SEPARATOR}{row['bvid']}"
+        return base64.urlsafe_b64encode(raw.encode("utf-8")).decode("ascii").rstrip("=")
+
+    @staticmethod
+    def _decode_cursor(cursor: str) -> tuple[str | None, str]:
+        """Decode a cursor back into (last_check, bvid)."""
+        padding = "=" * (-len(cursor) % 4)
+        try:
+            raw = base64.urlsafe_b64decode(cursor + padding).decode("utf-8")
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise ValueError("cursor 无效") from exc
+        last_check, _, bvid = raw.partition(_CURSOR_SEPARATOR)
+        if not bvid:
+            raise ValueError("cursor 无效")
+        return (last_check or None), bvid
 
     def _asset_record(self, row: sqlite3.Row) -> dict[str, Any]:
         item = _asset_from_row(row)
@@ -40,40 +69,73 @@ class AssetsMixin:
         asset_type: str | None,
         page: int,
         page_size: int,
+        cursor: str | None = None,
     ) -> dict[str, Any]:
         if page < 1 or page_size < 1 or page_size > 200:
             raise ValueError("page 必须大于 0，page_size 必须在 1 到 200 之间")
-        conditions = []
-        parameters: list[Any] = []
+        filter_conditions = []
+        filter_parameters: list[Any] = []
         if query:
             if len(query) > 200:
                 raise ValueError("query 不能超过 200 个字符")
-            conditions.append("(bvid LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\')")
+            filter_conditions.append("(bvid LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\')")
             escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-            parameters.extend([f"%{escaped}%", f"%{escaped}%"])
+            filter_parameters.extend([f"%{escaped}%", f"%{escaped}%"])
         if status is not None:
             normalized_status = self._status_value(status)
-            conditions.append("status=?")
-            parameters.append(normalized_status)
+            filter_conditions.append("status=?")
+            filter_parameters.append(normalized_status)
         if asset_type:
             if asset_type not in {"video", "article"}:
                 raise ValueError("type 必须是 video 或 article")
-            conditions.append("type=?")
-            parameters.append(asset_type)
-        where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
+            filter_conditions.append("type=?")
+            filter_parameters.append(asset_type)
+
+        row_conditions = list(filter_conditions)
+        row_parameters = list(filter_parameters)
+        if cursor:
+            last_check, bvid = self._decode_cursor(cursor)
+            if last_check is None:
+                # 已经走完有 last_check 的部分，剩下的是 last_check 为空的尾巴。
+                row_conditions.append("last_check IS NULL AND bvid > ?")
+                row_parameters.append(bvid)
+            else:
+                # 排序是 last_check DESC, bvid ASC，而 SQLite 把 NULL 排在最后，
+                # 所以比游标更靠后的行是：时间更早的、时间相同但 bvid 更大的，
+                # 以及所有 last_check 为空的行。
+                row_conditions.append(
+                    "(last_check < ? OR (last_check = ? AND bvid > ?)"
+                    " OR last_check IS NULL)"
+                )
+                row_parameters.extend([last_check, last_check, bvid])
+            offset_value = 0
+        else:
+            offset_value = (page - 1) * page_size
+
+        filter_where = f" WHERE {' AND '.join(filter_conditions)}" if filter_conditions else ""
+        rows_where = f" WHERE {' AND '.join(row_conditions)}" if row_conditions else ""
         database = self._database()
-        total = database.scalar(f"SELECT COUNT(*) FROM assets{where}", parameters)
-        # 直接按 last_check 排序而非 COALESCE(last_check,'')。
-        # 二者语义一致（SQLite 中 DESC 排序把 NULL 放在最后），但
-        # COALESCE 是表达式，索引无法用于排序：2 万资产下 2.0ms -> 0.09ms。
+        # The total counts every match, not only the ones left after the
+        # cursor, so the filter and the cursor are kept apart.
+        total = database.scalar(f"SELECT COUNT(*) FROM assets{filter_where}", filter_parameters)
+
+        # 多取一行用来判断还有没有下一页，返回给调用方的仍然只有 page_size 条。
         rows = database.query(
             "SELECT bvid, title, type, status, path, last_check, p_count "
-            f"FROM assets{where} ORDER BY last_check DESC, bvid "
-            "LIMIT ? OFFSET ?",
-            [*parameters, page_size, (page - 1) * page_size],
+            f"FROM assets{rows_where} ORDER BY last_check DESC, bvid LIMIT ? OFFSET ?",
+            [*row_parameters, page_size + 1, offset_value],
         )
+        has_more = len(rows) > page_size
+        rows = rows[:page_size]
         items = [self._asset_record(row) for row in rows]
-        return {"items": items, "assets": items, "total": total, "page": page, "page_size": page_size}
+        return {
+            "items": items,
+            "assets": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "next_cursor": self._encode_cursor(rows[-1]) if has_more and rows else None,
+        }
 
     @staticmethod
     def _status_value(status: str | int) -> int:

@@ -123,6 +123,12 @@ jobs:
             label: macos-arm64
             archive: tar
             pkg_install: brew
+          # Intel Mac 用户此前只能自行用 Rosetta 跑源码。macos-13 是
+          # 最后一个 x86_64 runner，单独出一个产物。
+          - os: macos-13
+            label: macos-x64
+            archive: tar
+            pkg_install: brew
           - os: ubuntu-latest
             label: linux-x64
             archive: tar

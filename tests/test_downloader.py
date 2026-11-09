@@ -172,6 +172,16 @@ def process_is_running(pid):
         finally:
             kernel32.CloseHandle(handle)
 
+    # Linux: a zombie is not a running process. It only waits to be reaped,
+    # and inside a container there may be no init to reap it, so os.kill
+    # would keep succeeding for a process that is already dead.
+    try:
+        with open(f"/proc/{pid}/stat", encoding="utf-8") as handle:
+            stat = handle.read()
+        return stat.rsplit(")", 1)[1].split()[0] != "Z"
+    except OSError:
+        pass
+
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
