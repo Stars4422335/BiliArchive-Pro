@@ -123,9 +123,13 @@ jobs:
             label: macos-arm64
             archive: tar
             pkg_install: brew
-          # Intel Mac 用户此前只能自行用 Rosetta 跑源码。macos-13 是
-          # 最后一个 x86_64 runner，单独出一个产物。
-          - os: macos-13
+          # Intel Mac 用户此前只能自行用 Rosetta 跑源码，单独出一个 x86_64 产物。
+          # 注意：macos-13 runner 镜像已于 2025-12-04 退役（GitHub 只维护
+          # 最新两个 macOS 版本），用旧 label 的作业会永远卡在 queued 而不是报错。
+          # 官方指定的 x86_64 迁移目标就是 macos-15-intel，它会一直可用到
+          # 2027 年 8 月 macOS 15 镜像退役为止。
+          # 参考：https://github.com/actions/runner-images/issues/13045
+          - os: macos-15-intel
             label: macos-x64
             archive: tar
             pkg_install: brew

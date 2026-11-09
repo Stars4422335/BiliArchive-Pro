@@ -677,7 +677,8 @@ F3（防"存在但损坏"的静默失败）：
   面板翻页直接带游标走索引。OFFSET 路径保留
 - 弹幕词云可在面板打开：/api/assets/{id}/wordcloud，
   查找沿用封面的"不许越出下载根目录"约束
-- 发布矩阵新增 macOS Intel（macos-13）
+- 发布矩阵新增 macOS Intel（macos-15-intel；macos-13 镜像已于
+  2025-12-04 退役，用旧 label 会永远排队不报错）
 - login.py 新增 --qr 非交互扫码：二维码写 PNG，扫完保存凭据
 
 **craft-anything 用作证据引擎**

@@ -380,7 +380,7 @@ cd webui && npm ci && npm run lint && npm test && npm run build
 
 - **深分页改游标分页**：`assets` 表本就有 `(last_check DESC, bvid)` 索引，游标直接走索引，深分页不再扫描并丢弃前面的每一行；OFFSET 路径保留给还没有游标的调用。
 - **弹幕词云可以在面板里打开**：词云早就写在媒体旁边的 `<stem>.wordcloud.svg`，此前只能上磁盘找。
-- **发布矩阵新增 macOS Intel 产物**（`macos-13`）。
+- **发布矩阵新增 macOS Intel 产物**，构建 runner 为 `macos-15-intel`。
 
 **扫码登录适配 B 站的新协议**
 

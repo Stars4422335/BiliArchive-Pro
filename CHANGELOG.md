@@ -25,7 +25,7 @@
 
 - **资产列表改为游标分页**：`assets` 表本来就有 `(last_check DESC, bvid)` 索引，深分页原先用 OFFSET 会扫描并丢弃前面的每一行。现在响应带上 `next_cursor`，面板翻页时直接带游标走索引；OFFSET 路径保留给还没有游标的调用。排序把 `last_check` 为空的资产排在最后，游标比较专门处理了这一段。
 - **弹幕词云可以在面板里打开了**：词云早就写在媒体旁边的 `<stem>.wordcloud.svg`，但面板够不着它，只能在磁盘上看。现在详情抽屉里有入口，API 通过 `/api/assets/{id}/wordcloud` 提供，查找沿用与封面相同的"不许越出下载根目录"约束。
-- **发布矩阵新增 macOS Intel 产物**（`macos-13`），此前只有 arm64。
+- **发布矩阵新增 macOS Intel 产物**，此前只有 arm64。产物在 `macos-15-intel` runner 上构建——GitHub 的 `macos-13` 镜像已于 2025-12-04 退役，用旧 label 的作业会一直停在排队而不会报错。
 
 ### 其他
 

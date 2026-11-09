@@ -358,7 +358,7 @@ Full details in [CHANGELOG.md](CHANGELOG.md).
 
 - **Deep pages now use a cursor**: the assets table already had an index on `(last_check DESC, bvid)`, so a cursor walks that index instead of scanning and discarding every row before it. The offset path stays for callers that have no cursor yet.
 - **The danmaku word cloud is reachable from the panel**: it has always been written next to the media as `<stem>.wordcloud.svg`, but there was no way to reach it but the filesystem.
-- **The release matrix gained a macOS Intel artefact** (`macos-13`).
+- **The release matrix gained a macOS Intel artefact**, built on the `macos-15-intel` runner.
 
 **QR login adapted to Bilibili's new protocol**
 
