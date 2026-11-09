@@ -119,6 +119,13 @@ def create_app(
             raise HTTPException(status_code=404, detail="poster 不存在")
         return FileResponse(path, media_type="image/jpeg")
 
+    @app.get("/api/assets/{asset_id}/wordcloud")
+    async def wordcloud(asset_id: str) -> FileResponse:
+        path = service.wordcloud_path(asset_id)
+        if path is None:
+            raise HTTPException(status_code=404, detail="词云不存在")
+        return FileResponse(path, media_type="image/svg+xml")
+
     @app.get("/api/config")
     async def get_config() -> dict:
         try:

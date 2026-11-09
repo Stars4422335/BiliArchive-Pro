@@ -164,8 +164,18 @@ describe("详情抽屉", () => {
     expect(screen.getByText("资产详情")).toBeInTheDocument();
   });
 
-  it("Esc 关闭抽屉", async () => {
+  it("详情里有弹幕词云入口", async () => {
     const { api } = await import("../api/client");
+    render(<AssetsView assets={assetsResponse(25)} loading={false} error="" onLoad={api.getAssets} />);
+
+    await userEvent.click(await screen.findByText("资产 0"));
+    await screen.findByRole("dialog");
+
+    const link = screen.getByRole("link", { name: "打开词云" });
+    expect(link).toHaveAttribute("href", "/api/assets/BV0/wordcloud");
+  });
+
+  it("Esc 关闭抽屉", async () => {    const { api } = await import("../api/client");
     render(<AssetsView assets={assetsResponse(25)} loading={false} error="" onLoad={api.getAssets} />);
 
     await userEvent.click(await screen.findByText("资产 0"));

@@ -157,6 +157,19 @@ class AssetsMixin:
         return self._poster_from_asset_path(rows[0]["path"])
 
     def _poster_from_asset_path(self, asset_path: Any) -> Path | None:
+        asset_dir = self._asset_dir(asset_path)
+        if asset_dir is None:
+            return None
+        try:
+            poster = (asset_dir / "poster.jpg").resolve(strict=True)
+            if poster.parent != asset_dir or not poster.is_relative_to(self.download_root()) or not poster.is_file():
+                return None
+            return poster
+        except (OSError, RuntimeError, ValueError):
+            return None
+
+    def _asset_dir(self, asset_path: Any) -> Path | None:
+        """Resolve an asset path and refuse anything outside the download root."""
         if not asset_path:
             return None
         root = self.download_root()
@@ -167,12 +180,35 @@ class AssetsMixin:
             asset_dir = asset_dir.resolve()
             if not asset_dir.is_relative_to(root):
                 return None
-            poster = (asset_dir / "poster.jpg").resolve(strict=True)
-            if poster.parent != asset_dir or not poster.is_relative_to(root) or not poster.is_file():
-                return None
-            return poster
+            return asset_dir
         except (OSError, RuntimeError, ValueError):
             return None
+
+    def wordcloud_path(self, asset_id: str) -> Path | None:
+        """Locate the danmaku word cloud side car of an asset.
+
+        The word cloud is written next to the media file as
+        "<stem>.wordcloud.svg"; the stem depends on the media layout, so the
+        asset directory is scanned for it.
+        """
+        rows = self._database().query("SELECT path FROM assets WHERE bvid=?", [asset_id])
+        if not rows or not rows[0]["path"]:
+            return None
+        asset_dir = self._asset_dir(rows[0]["path"])
+        if asset_dir is None:
+            return None
+        try:
+            candidates = sorted(asset_dir.glob("*.wordcloud.svg"))
+        except OSError:
+            return None
+        for candidate in candidates:
+            try:
+                resolved = candidate.resolve(strict=True)
+            except OSError:
+                continue
+            if resolved.parent == asset_dir and resolved.is_file():
+                return resolved
+        return None
 
 
 __all__ = ["AssetsMixin", "STATUS_NAMES"]
