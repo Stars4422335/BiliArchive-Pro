@@ -14,22 +14,36 @@ else:
 
 from bilibili_api import register_client
 from bilibili_api.clients.HTTPXClient import HTTPXClient
-from bilibili_api.login_v2 import QrCodeLogin, QrCodeLoginEvents
 
+from app import __version__
+from app.core.bili_login import (
+    create_web_qrcode,
+    credential_is_usable,
+    poll_qrcode,
+)
 from app.core.secure_file import atomic_write_text
 
 # 关键：注册 httpx 客户端
 register_client("httpx", HTTPXClient)
 
+def _credential_fields(credential):
+    """把凭据统一成字典，兼容库返回的对象与自己解析出的字典。"""
+    if isinstance(credential, dict):
+        return {
+            key: (credential.get(key) or "")
+            for key in ("sessdata", "bili_jct", "buvid3", "dedeuserid", "ac_time_value")
+        }
+    return {
+        "sessdata": getattr(credential, "sessdata", "") or "",
+        "bili_jct": getattr(credential, "bili_jct", "") or "",
+        "buvid3": getattr(credential, "buvid3", "") or "",
+        "dedeuserid": getattr(credential, "dedeuserid", "") or "",
+        "ac_time_value": getattr(credential, "ac_time_value", "") or "",
+    }
+
 async def save_credential(credential):
     """保存凭证到文件"""
-    cookie_data = {
-        "sessdata": credential.sessdata,
-        "bili_jct": credential.bili_jct,
-        "buvid3": credential.buvid3,
-        "dedeuserid": credential.dedeuserid,
-        "ac_time_value": credential.ac_time_value
-    }
+    cookie_data = _credential_fields(credential)
 
     serialized_cookie = json.dumps(cookie_data, ensure_ascii=False, indent=4) + "\n"
     atomic_write_text("./data/cookie.json", serialized_cookie)
@@ -39,43 +53,75 @@ async def save_credential(credential):
     print("[+] 你现在可以运行: python main.py --cli")
     print("=" * 60)
 
+def _write_qrcode_png(url, path):
+    """把登录链接画成二维码图片，交给用户用手机扫。"""
+    import qrcode
+
+    image = qrcode.QRCode()
+    image.add_data(url)
+    image.make_image().save(path)
+
 async def login_by_qrcode():
     """方式1：二维码登录"""
     print("\n[*] 正在初始化二维码登录...")
+    qrcode_key, url = await create_web_qrcode()
 
-    qr = QrCodeLogin()
+    print("\n请使用 B 站手机 App 扫描下方二维码：")
+    print("(打开 App → 我的 → 扫一扫)\n")
 
-    try:
-        await qr.generate_qrcode()
+    target = os.path.abspath("./data/login-qr-terminal.png")
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    _write_qrcode_png(url, target)
+    print(f"[*] 二维码图片同时写入: {target}")
 
-        print("\n请使用 B 站手机 App 扫描下方二维码：")
-        print("(打开 App → 我的 → 扫一扫)\n")
-        print(qr.get_qrcode_terminal())
-        print()
-
-        print("[*] 等待扫码中...")
-        while True:
-            state = await qr.check_state()
-
-            if state == QrCodeLoginEvents.DONE:
-                break
-            elif state == QrCodeLoginEvents.SCAN:
-                print("[*] 二维码已扫描，请在手机上确认登录...")
-            elif state == QrCodeLoginEvents.TIMEOUT:
-                print("[-] 二维码已过期，请重新运行此脚本。")
+    print("[*] 等待扫码中...")
+    while True:
+        state, credential = await poll_qrcode(qrcode_key)
+        if state == "done":
+            if not credential_is_usable(credential):
+                print("[-] 登录回调缺少凭据字段，请重新扫码。")
                 return False
-            elif state == QrCodeLoginEvents.CONF:
-                print("[*] 正在确认登录...")
+            await save_credential(credential)
+            return True
+        if state == "expired":
+            print("[-] 二维码已过期，请重新运行本脚本。")
+            return False
+        if state == "confirmed":
+            print("[*] 正在确认登录...")
+        await asyncio.sleep(1.5)
 
-            await asyncio.sleep(1.5)
+async def login_by_qrcode_png(out_path, timeout_seconds=180):
+    """非交互扫码：把二维码写成 PNG 文件，等待手机 App 确认后保存凭据。
 
-        credential = qr.get_credential()
-        await save_credential(credential)
-        return True
+    终端二维码在自动化流程里没法被人扫到，所以这条路径把二维码落到
+    一个图片文件里，由调用方把它交给用户扫。
+    """
+    qrcode_key, url = await create_web_qrcode()
 
-    except Exception as e:
-        print(f"\n[-] 二维码登录失败: {e}")
-        return False
+    target = os.path.abspath(out_path)
+    os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
+    _write_qrcode_png(url, target)
+    print(f"[*] 二维码已写入: {target}")
+    print("[*] 请用 B 站手机 App 扫描该图片并确认登录。")
+
+    deadline = time.monotonic() + max(1, int(timeout_seconds))
+    while time.monotonic() < deadline:
+        state, credential = await poll_qrcode(qrcode_key)
+        if state == "done":
+            if not credential_is_usable(credential):
+                print("[-] 登录回调缺少凭据字段，请重新扫码。")
+                return False
+            await save_credential(credential)
+            return True
+        if state == "expired":
+            print("[-] 二维码已过期，请重新运行。")
+            return False
+        if state == "confirmed":
+            print("[*] 已在手机上确认，等待登录完成...")
+        await asyncio.sleep(1.5)
+
+    print("[-] 等待扫码确认超时，请重新运行。")
+    return False
 
 async def login_by_sms():
     """方式2：手机号+验证码登录"""
@@ -91,11 +137,9 @@ async def login_by_sms():
         if not phone:
             print("[-] 手机号不能为空")
             return False
-
-        # 创建 PhoneNumber 对象
         phonenumber = PhoneNumber(phone, country='+86')
 
-        # 创建 Geetest 对象（用于验证码）
+        # 获取 Geetest 对象
         geetest = Geetest()
 
         print("[*] 正在请求发送验证码...")
@@ -107,11 +151,10 @@ async def login_by_sms():
         if not captcha_id:
             print("[-] 发送验证码失败")
             return False
-
         print("[+] 验证码已发送，请查收短信")
 
         # 获取用户输入的验证码
-        code = input("请输入短信验证码: ").strip()
+        code = input("\n请输入短信验证码: ").strip()
         if not code:
             print("[-] 验证码不能为空")
             return False
@@ -125,7 +168,7 @@ async def login_by_sms():
         return True
 
     except Exception as e:
-        print(f"\n[-] 短信登录失败: {e}")
+        print(f"[-] 短信登录失败: {e}")
         print("[!] 可能原因：")
         print("    1. 手机号格式错误")
         print("    2. 验证码错误或已过期")
@@ -133,40 +176,6 @@ async def login_by_sms():
         print("    4. B站账号安全限制")
         print("\n[!] 建议：在 Windows/Mac 本地使用二维码方式登录")
         return False
-
-async def login_by_qrcode_png(out_path, timeout_seconds=180):
-    """非交互扫码：把二维码写成 PNG，等待手机 App 确认后保存凭据。
-
-    终端二维码在自动化流程里没法被人扫到，所以这条路径把二维码落到
-    一个图片文件里，由调用方把它交给用户扫。
-    """
-    qr = QrCodeLogin()
-    await qr.generate_qrcode()
-
-    picture = qr.get_qrcode_picture()
-    target = os.path.abspath(out_path)
-    os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
-    with open(target, "wb") as handle:
-        handle.write(picture.content)
-    print(f"[*] 二维码已写入: {target}")
-    print("[*] 请用 B 站手机 App 扫描该图片并确认登录。")
-
-    deadline = time.monotonic() + max(1, int(timeout_seconds))
-    while time.monotonic() < deadline:
-        state = await qr.check_state()
-        if state == QrCodeLoginEvents.DONE:
-            await save_credential(qr.get_credential())
-            return True
-        if state == QrCodeLoginEvents.TIMEOUT:
-            print("[-] 二维码已过期，请重新运行。")
-            return False
-        if state == QrCodeLoginEvents.CONF:
-            print("[*] 已在手机上确认，等待登录完成...")
-        await asyncio.sleep(1.5)
-
-    print("[-] 等待扫码确认超时，请重新运行。")
-    return False
-
 
 def parse_args():
     parser = argparse.ArgumentParser(description="BiliArchive-Pro 登录")
@@ -188,7 +197,6 @@ def parse_args():
     )
     return parser.parse_args()
 
-
 async def main():
     args = parse_args()
 
@@ -197,7 +205,7 @@ async def main():
         raise SystemExit(0 if success else 1)
 
     print("=" * 60)
-    print("       BiliArchive-Pro 登录系统")
+    print(f"       BiliArchive-Pro 登录系统 (v{__version__})")
     print("=" * 60)
 
     # 检查是否在WSL环境
@@ -218,7 +226,8 @@ async def main():
         try:
             choice = input("\n请输入选项 [0-2]: ").strip()
         except EOFError:
-            print("\n[!] 非交互式环境，默认选择二维码登录...")
+            # 非交互式环境，默认选择二维码登录...
+            print("[!] 非交互式环境，默认选择二维码登录...")
             choice = "1"
 
         if choice == "0":
@@ -228,12 +237,12 @@ async def main():
             success = await login_by_qrcode()
             if success:
                 return
-            print("\n[!] 登录失败，请重试或选择其他方式")
+            print("[!] 登录失败，请重试或选择其他方式")
         elif choice == "2":
             success = await login_by_sms()
             if success:
                 return
-            print("\n[!] 登录失败，请重试或选择其他方式")
+            print("[!] 登录失败，请重试或选择其他方式")
         else:
             print("[-] 无效选项，请重新输入")
 
