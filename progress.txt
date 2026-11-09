@@ -785,3 +785,33 @@ cookie 不在响应体里了，而是**访问这个一次性 ticket 地址，从
 - B 站接口会变，这个项目依赖的库也可能跟不上。登录这类"协议层"的代码要有自己的解析
   和回归测试，不能只靠库
 - `data/config.local.yaml` 是本机覆盖配置（不进 Git），把下载量限制在 1 个用于验收
+## 2026-11-09 - Task: Phase 6 真实登录 + 容器内真实下载（六项取证全通过）
+
+### What was done:
+扫码登录打通后，在**容器内**跑了一次真实下载（`max_downloads_per_run: 1` 限流，
+配置写在不进 Git 的 `data/config.local.yaml`）。
+
+容器内引擎日志：登录验证成功（账号 哞Cx330）→ 自动取到 24 个收藏夹 → 扫描
+「默认收藏夹」→ 锁定新视频 BV1FXHs68Eh1《AI 做的界面为什么丑？〈Refactoring UI〉
+20 条设计规则》→ yt-dlp 下载 13.91 MiB 视频 + 9.33 MiB 音频 → ffmpeg 合并 →
+弹幕转 ASS → 生成词云 → 写 NFO → 封面整理 → 入库 → 达到全局限制后安全退出（exit 0）。
+
+**六项取证（脚本 D:\cli_projects\.tooling\phase6-evidence.py，6/6 通过）**
+1. 视频落盘：1 个媒体文件 23.5 MB，**ffmpeg 解码无错误**
+2. NFO/封面/结构：1 个 NFO（title/uniqueid/studio/actor/premiered/plot 齐）、1 张 poster.jpg
+3. 弹幕与词云：.danmaku.xml + .danmaku.ass + .danmaku.wordcloud.svg
+4. 数据库：assets **8 → 9 行**，新增 BV1FXHs68Eh1，status=0
+5. runtime.json：status=stopped phase=complete downloaded_count=1
+6. WebUI 可见：craft-anything 截图，资产总数 9、视频 8、本轮归档 1、最近扫描 11/09 12:56
+
+### Testing:
+- 六项取证脚本 6/6 通过（exit 0）
+- craft-anything db_sqlite_show 取证下载后的库（evidence ev_492f9ae9…）
+- 门禁维持：ruff ✅ / mypy ✅ / pytest 366 passed ✅
+
+### Notes:
+- **NFO 里没有 `<art>` 字段，这是设计如此不是缺陷**：Plex/Jellyfin/Emby 按"媒体同目录
+  下 poster.jpg"的本地约定自动认封面，`<art>` 是给远程 URL 用的。若要让 NFO 自带引用，
+  需要在写 NFO 之后再补一遍——属于可选增强，本轮没做。
+- 下载产物（23.5 MB）按约定保留在 downloads/ 供检查，清理需用户同意。
+- 本轮又重建了运行时镜像，构建缓存重新长起来，收尾要再清一次。
