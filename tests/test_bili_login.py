@@ -1,15 +1,41 @@
-"""扫码登录的凭据解析测试。
+"""扫码登录的凭据获取测试。
 
-bilibili_api 自带的 QrCodeLogin 用字符串切分解析凭据 URL，B 站现在
-返回的格式会让它一个字段都取不到（详见 app/core/bili_login.py）。
-这些用例锁住自己那套容错解析：分隔符、字段前后的空格、cookie 名的大小写。
+B 站的扫码响应不再直接给出 cookie，而是给一次性的 ticket 地址，cookie
+要从它的响应头里换。`bilibili_api` 自带的 `QrCodeLogin` 还在按老格式找
+cookie，拿到的永远是三个空字符串。
+
+这些用例锁住两件事：新旧两种响应都能认出凭据，以及"看起来成功但其实
+什么都没拿到"这种情况必须被识别成不可用。
 """
 
 from app.core.bili_login import credential_is_usable, parse_credential_url
 
 
-def test_parses_the_space_separated_format_bilibili_returns_now():
-    # B 站现在返回的是 `& ` 分隔、每个 cookie 前带一个空格。
+def test_the_current_response_is_a_ticket_url_not_a_cookie_url():
+    """B 站现在返回的是一次性 ticket 地址，cookie 在它的响应头里。
+
+    这条用例把真实结构钉住：如果哪天 B 站又改回直接把 cookie 写在
+    URL 里，它会失败并提醒更新解析。
+    """
+    from app.core.bili_login import poll_qrcode  # noqa: F401
+
+    ticket_url = (
+        "https://passport.biligame.com/x/passport-login/web/crossDomain"
+        "?ticket=abc123&gourl=https%3A%2F%2Fwww.bilibili.com&first_domain=.bilibili.com"
+    )
+
+    # 老解析器在这条 URL 上什么也取不到——这正是当初"登录成功但凭据全空"的原因。
+    assert parse_credential_url(ticket_url) == {
+        "sessdata": "",
+        "bili_jct": "",
+        "dedeuserid": "",
+    }
+    # 新流程靠 "ticket=" 判断该走交换而不是解析。
+    assert "ticket=" in ticket_url
+
+
+def test_parses_the_space_separated_format_bilibili_returned_earlier():
+    # 早期 B 站的返回是 `& ` 分隔、每个 cookie 前带一个空格。
     url = (
         "https://passport.bilibili.com/x/passport-login/web/crossDomain"
         "?DedeUserID=12345& SESSDATA=abc%2Cdef& bili_jct=ghi"
