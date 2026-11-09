@@ -26,7 +26,6 @@ from app.core.commands import (
 )
 from app.scheduler.scanner import FavScanner
 
-
 BV_ID = "BV1GJ411x7h7"
 AV_ID = "av80433022"
 

@@ -28,7 +28,6 @@ from app.core.runtime_state import (
 from app.scheduler.scanner import FavScanner
 from app.scheduler.updater import ComponentUpdater
 
-
 # 命令通道轮询间隔（秒）。休眠期用分片睡眠，保证 trigger_scan 能及时唤醒。
 COMMAND_POLL_INTERVAL = 5.0
 
@@ -462,7 +461,9 @@ async def _run_scan_loop(config, cred, uid, db, runtime=None):
             )
             await _run_source_scan(
                 label,
-                lambda: scanner.verify_integrity(verifier),
+                # Bind the verifier explicitly: the lambda would otherwise
+                # close over the loop variable.
+                lambda verifier=verifier: scanner.verify_integrity(verifier),
             )
 
         # 如果达到了 limit，则直接退出整个程序

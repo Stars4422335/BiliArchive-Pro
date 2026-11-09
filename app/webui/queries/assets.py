@@ -11,7 +11,6 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-
 STATUS_NAMES = {
     "active": 0,
     "tombstoned": 1,

@@ -6,6 +6,7 @@ import re
 
 from bilibili_api import aid2bvid
 
+
 class ScannerBase:
     MAX_EXPECTED_PARTS = 1000
     MEDIA_EXTENSIONS = {

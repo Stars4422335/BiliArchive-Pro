@@ -9,6 +9,7 @@ import tempfile
 import threading
 import time
 from urllib.parse import urlparse
+
 from app.core.danmaku import DanmakuConverter
 from app.core.secure_file import atomic_write_text
 from app.core.wordcloud import DanmakuWordCloud
@@ -113,22 +114,22 @@ class Downloader:
         try:
             with open(json_cookie_path, 'r', encoding='utf-8') as f:
                 cookie_data = json.load(f)
-            
+
             # Netscape 格式头部
             netscape_lines = ["# Netscape HTTP Cookie File", ""]
-            
+
             # B站域名
             domain = ".bilibili.com"
-            
+
             # 转换关键 cookie 字段
             cookie_mapping = {
                 'sessdata': 'SESSDATA',
-                'bili_jct': 'bili_jct', 
+                'bili_jct': 'bili_jct',
                 'buvid3': 'buvid3',
                 'dedeuserid': 'DedeUserID',
                 'ac_time_value': 'ac_time_value'
             }
-            
+
             for json_key, netscape_name in cookie_mapping.items():
                 value = cookie_data.get(json_key, '')
                 if value:
@@ -146,7 +147,7 @@ class Downloader:
             with self._temporary_cookie_lock:
                 self._owned_temporary_cookies.add(owned_path)
             return owned_path
-            
+
         except Exception as e:
             if temporary_cookie_path:
                 try:
@@ -201,7 +202,7 @@ class Downloader:
             delay = random.uniform(15.0, 35.0)  # 下载完大文件后长休眠
         else:
             delay = random.uniform(2.0, 5.0)    # API 请求间短休眠
-            
+
         print(f"[*] 风控保护：随机休眠 {delay:.1f} 秒...")
         time.sleep(delay)
 

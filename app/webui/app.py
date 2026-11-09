@@ -10,15 +10,14 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 
 from app import __version__
+from app.core.commands import CommandError
 
 from .service import (
     ConfigValidationError,
     RevisionConflict,
     WebService,
-    command_error,
     is_loopback_host,
 )
-from app.core.commands import CommandError
 
 
 def create_app(

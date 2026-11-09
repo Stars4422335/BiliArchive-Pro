@@ -17,7 +17,6 @@ from typing import Any
 
 import yaml
 
-
 CONFIG_SCHEMA = {
     "system": {
         "min_disk_gb",

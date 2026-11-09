@@ -1,14 +1,11 @@
 import asyncio
 import subprocess
-import sys
-from pathlib import Path
 
 import pytest
 
 from app.core.database_manager import DatabaseManager
 from app.core.integrity import IntegrityVerifier
 from app.scheduler.scanner import FavScanner
-
 from tests.test_scanner import scanner_config
 
 
@@ -208,7 +205,6 @@ def test_integrity_mode_validation():
 
 
 def test_scanner_verify_integrity_writes_results(tmp_path, monkeypatch):
-    now = 1_800_000_000
     db = DatabaseManager(":memory:")
     try:
         good_dir = tmp_path / "good"

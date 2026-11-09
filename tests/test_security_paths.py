@@ -12,7 +12,6 @@ import pytest
 
 from app.core.metadata import MetadataGenerator
 
-
 # ---------- SSRF 域名白名单 ----------
 
 

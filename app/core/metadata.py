@@ -1,11 +1,12 @@
 import os
 import re
 import shutil
-import requests
 import xml.etree.ElementTree as ET
-from defusedxml import minidom as defused_minidom
 from datetime import datetime
+
+import requests
 from bs4 import BeautifulSoup
+from defusedxml import minidom as defused_minidom
 
 
 class MetadataGenerator:
@@ -201,9 +202,9 @@ class MetadataGenerator:
         cv_id = article_info.get("id")
         title = article_info.get("title", f"cv{cv_id}")
         url = f"https://www.bilibili.com/read/cv{cv_id}"
-        
+
         print(f"[*] 正在处理专栏图文: {title} (cv{cv_id})")
-        
+
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
             "Referer": "https://www.bilibili.com/"
@@ -231,29 +232,32 @@ class MetadataGenerator:
                 if element.name == 'p':
                     # 处理文本
                     text = element.get_text().strip()
-                    if text: md_lines.append(f"{text}\n\n")
-                
+                    if text:
+                        md_lines.append(f"{text}\n\n")
+
                 elif element.name == 'figure':
                     # 处理图片
                     img_tag = element.find('img')
                     if img_tag:
                         img_url = img_tag.get('data-src') or img_tag.get('src')
-                        if not img_url: continue
+                        if not img_url:
+                            continue
                         if isinstance(img_url, list):
                             img_url = str(img_url[0])
                         else:
                             img_url = str(img_url)
-                        if img_url.startswith("//"): img_url = "https:" + img_url
+                        if img_url.startswith("//"):
+                            img_url = "https:" + img_url
                         if not MetadataGenerator._is_trusted_image_url(img_url):
                             print(f"[!] 跳过非 B 站 CDN 图片: {img_url}")
                             continue
-                        
+
                         # 清理图片后缀下载原图
                         img_name = os.path.basename(img_url).split('@')[0]
                         local_img_path = MetadataGenerator._ensure_within(
                             img_dir, os.path.join(img_dir, img_name)
                         )
-                        
+
                         try:
                             # 下载并保存图片
                             img_data = requests.get(img_url, headers=headers).content
@@ -271,7 +275,7 @@ class MetadataGenerator:
             )
             with open(md_path, "w", encoding="utf-8") as f:
                 f.writelines(md_lines)
-            
+
             print(f"[+成功] 专栏已转换为本地 Markdown: {md_path}")
             return True
 

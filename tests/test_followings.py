@@ -1,13 +1,9 @@
 import asyncio
 from pathlib import Path
 
-import pytest
-
 from app.core.parser import SyncFetchError
 from app.scheduler.scanner import FavScanner
-
 from tests.test_scanner import (
-    ExistingAssetDatabase,
     RecordingDatabase,
     scanner_config,
 )

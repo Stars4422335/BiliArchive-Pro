@@ -28,7 +28,6 @@ import xml.etree.ElementTree as ET
 
 from app.core.secure_file import atomic_write_text
 
-
 # 单条弹幕最多贡献的词数，避免一条刷屏弹幕主导整个词云
 MAX_TERMS_PER_COMMENT = 6
 MIN_TERM_LENGTH = 2
@@ -184,7 +183,7 @@ class DanmakuWordCloud:
         # 制造视觉上的分散感，同时保证同一输入输出可复现
         columns = 4
         slot = height / max(1, math.ceil(len(selected) / columns))
-        for index, (term, font_size) in enumerate(zip(selected, font_sizes)):
+        for index, (term, font_size) in enumerate(zip(selected, font_sizes, strict=False)):
             column = index % columns
             row = index // columns
             x = (column + 0.5) * (width / columns)

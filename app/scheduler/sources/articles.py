@@ -2,6 +2,7 @@
 
 from app.core.metadata import MetadataGenerator
 
+
 class ArticlesMixin:
 
     async def scan_following_articles(self, mid, up_name=None):

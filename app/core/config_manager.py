@@ -2,7 +2,6 @@ import os
 
 import yaml
 
-
 LOCAL_CONFIG_ENV = "BILIARCHIVE_LOCAL_CONFIG_PATH"
 
 

@@ -1,7 +1,8 @@
 import asyncio
 
 import httpx
-from bilibili_api import favorite_list, video, user
+from bilibili_api import favorite_list, user, video
+
 
 class SyncFetchError(RuntimeError):
     """同步列表在有限重试后仍无法读取。"""

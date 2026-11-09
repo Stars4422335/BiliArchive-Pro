@@ -2,15 +2,16 @@
 
 from app.core.metadata import MetadataGenerator
 
+
 class WatchLaterMixin:
 
     async def scan_watch_later(self):
         """扫描稍后再看列表"""
         if self.max_global_downloads and self.global_download_count >= self.max_global_downloads:
-            print(f"[*] 【全局限制】已达到最大下载数量，跳过稍后再看")
+            print("[*] 【全局限制】已达到最大下载数量，跳过稍后再看")
             return
 
-        print(f"\n[>>>] 开始扫描: 稍后再看")
+        print("\n[>>>] 开始扫描: 稍后再看")
         items = await self.parser.get_watch_later_list()
         if not items:
             return
@@ -53,7 +54,7 @@ class WatchLaterMixin:
                     self.db.update_last_check(db_key)
                     continue
                 print(f"[!] 数据库记录对应媒体不完整，准备续跑修复: {title}")
-                
+
             print(f"[*] 发现新视频，准备抓取: {title}")
             download_result = await self._download_video_item("稍后再看", item)
 
@@ -70,7 +71,7 @@ class WatchLaterMixin:
                     downloaded_count=self.global_download_count,
                     message=f"已归档视频：{title}",
                 )
-                
+
                 if self.max_global_downloads and self.global_download_count >= self.max_global_downloads:
                     print(f"\n[✓] 【全局限制】已成功下载 {self.max_global_downloads} 个视频，测试完成！")
                     return

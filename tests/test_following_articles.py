@@ -329,8 +329,9 @@ def test_global_limit_stops_article_scan(tmp_path, monkeypatch):
 
 def test_article_types_defaults_to_off():
     """默认关闭：只想要视频的用户不会被专栏请求打扰。"""
-    import yaml
     from pathlib import Path
+
+    import yaml
 
     root = Path(__file__).resolve().parents[1]
     config = yaml.safe_load((root / "config.yaml").read_text(encoding="utf-8"))
@@ -340,7 +341,6 @@ def test_article_types_defaults_to_off():
 def test_main_gates_article_scan_on_config():
     import inspect
 
-    import main
 
     source = inspect.getsource(daemon._run_scan_loop)
     assert "article_types" in source

@@ -2,6 +2,7 @@
 
 from app.core.metadata import MetadataGenerator
 
+
 class FavoritesMixin:
 
     async def scan_favorite(self, fav_id, fav_name):
@@ -11,7 +12,7 @@ class FavoritesMixin:
             return
 
         print(f"\n[>>>] 开始扫描收藏夹: {fav_name} (ID: {fav_id})")
-        
+
         page = 1
         has_more = True
 
@@ -29,7 +30,7 @@ class FavoritesMixin:
                 bvid = str(item.get('bvid') or '').strip()
                 title = item.get('title')
                 asset_type = item.get('type')
-                
+
                 # 确定数据库主键：视频用 bvid，专栏用 cv{id}
                 if asset_type == "article":
                     db_key = f"cv{item.get('id')}"
@@ -75,7 +76,7 @@ class FavoritesMixin:
                             self.db.update_last_check(db_key)
                             continue
                         print(f"[!] 数据库记录对应媒体不完整，准备续跑修复: {title}")
-                        
+
                     print(f"[*] 发现新视频，准备抓取: {title}")
                     download_result = await self._download_video_item(fav_name, item)
 
@@ -92,7 +93,7 @@ class FavoritesMixin:
                             downloaded_count=self.global_download_count,
                             message=f"已归档视频：{title}",
                         )
-                        
+
                         # 检查是否达到全局限制（0或None表示无限制）
                         if self.max_global_downloads and self.global_download_count >= self.max_global_downloads:
                             print(f"\n[✓] 【全局限制】已成功下载 {self.max_global_downloads} 个视频，测试完成！")
@@ -107,7 +108,7 @@ class FavoritesMixin:
                         print(f"[*] 专栏已在库中，跳过并更新存活标记: {title}")
                         self.db.update_last_check(article_key)
                         continue
-                        
+
                     print(f"[*] 发现新专栏图文，准备抓取: {title} ({article_key})")
                     save_path = self.path_mgr.get_article_dir(fav_name, title, cv_id)
                     self._report_progress(
@@ -149,7 +150,7 @@ class FavoritesMixin:
                         if self.max_global_downloads and self.global_download_count >= self.max_global_downloads:
                             print(f"\n[✓] 【全局限制】已成功下载 {self.max_global_downloads} 个资源，本轮结束！")
                             return
-            
+
             # 本页处理结束，如果未触发退出条件且 has_more=True，则页码+1继续
             page += 1
             if has_more:

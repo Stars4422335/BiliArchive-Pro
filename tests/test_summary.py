@@ -7,7 +7,6 @@
 4. 隔离——只读当前媒体自己的字幕，不碰同目录其他资产。
 """
 
-import pytest
 
 from app.core.metadata import MetadataGenerator
 from app.core.summary import LocalSummarizer
@@ -287,8 +286,9 @@ def test_subtitle_reading_accepts_vtt_and_ass(tmp_path):
 
 
 def test_summary_config_defaults_to_disabled():
-    import yaml
     from pathlib import Path
+
+    import yaml
 
     root = Path(__file__).resolve().parents[1]
     config = yaml.safe_load((root / "config.yaml").read_text(encoding="utf-8"))

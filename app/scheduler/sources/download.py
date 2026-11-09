@@ -5,6 +5,7 @@ import os
 from app.core.metadata import MetadataGenerator
 from app.core.summary import LocalSummarizer
 
+
 class DownloadMixin:
 
     def _attach_outline(self, item, media_dir, file_stem):

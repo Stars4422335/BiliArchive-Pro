@@ -2,6 +2,7 @@
 
 from bilibili_api import aid2bvid, bvid2aid
 
+
 class RedownloadMixin:
 
     def request_redownload(self, asset_id):

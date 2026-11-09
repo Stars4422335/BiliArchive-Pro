@@ -1,0 +1,26 @@
+# Ruff configuration for BiliArchive-Pro.
+#
+# The rule set is deliberately small: pyflakes (F) catches real defects,
+# pycodestyle (E/W) keeps the style consistent, bugbear (B) catches the
+# mistakes that survive a code review, and isort (I) keeps the imports
+# readable. Anything stricter can be added per module once it is clean.
+
+line-length = 100
+target-version = "py311"
+
+[lint]
+select = ["F", "E", "W", "B", "I"]
+ignore = [
+    # Long lines are not a defect here and the formatter is not enforced,
+    # so this rule would only produce noise.
+    "E501",
+]
+
+[lint.isort]
+known-first-party = ["app"]
+combine-as-imports = true
+
+[lint.per-file-ignores]
+# Tests import fixtures in a natural reading order and shadow builtins on
+# purpose. Assigning a lambda to a name is how a stub is built there.
+"tests/*" = ["B011", "E731"]

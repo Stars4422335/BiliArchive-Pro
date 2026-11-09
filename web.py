@@ -6,7 +6,6 @@ import uvicorn
 
 from app.webui import create_app
 
-
 PROJECT_ROOT = Path(__file__).resolve().parent
 
 

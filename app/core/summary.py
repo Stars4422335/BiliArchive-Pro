@@ -31,7 +31,6 @@ import math
 import re
 from collections import Counter
 
-
 # 中英文分词：中文取二元组（无词典依赖），英文/数字取整词
 _TOKEN_PATTERN = re.compile(r"[一-鿿]+|[A-Za-z][A-Za-z0-9_']*|\d+")
 _SENTENCE_SPLIT = re.compile(r"[。！？!?;；\n]+|(?<=[.!?])\s+")
@@ -107,7 +106,7 @@ class LocalSummarizer:
         # 没有任何有效词的句子直接丢弃
         pairs = [
             (sentence, tokens)
-            for sentence, tokens in zip(sentences, tokenized)
+            for sentence, tokens in zip(sentences, tokenized, strict=False)
             if tokens
         ]
         if len(pairs) < 2:
@@ -115,7 +114,7 @@ class LocalSummarizer:
         sentences = [p[0] for p in pairs]
         tokenized = [p[1] for p in pairs]
 
-        frequency = Counter()
+        frequency: Counter[str] = Counter()
         for tokens in tokenized:
             frequency.update(set(tokens))
 

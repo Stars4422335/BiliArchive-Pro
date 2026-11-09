@@ -1,6 +1,8 @@
 """Syncing watch history as metadata only."""
 
 import time
+
+
 class HistoryMixin:
 
     async def sync_watch_history(self, max_pages=50):

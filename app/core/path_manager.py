@@ -176,9 +176,9 @@ class PathManager:
 
     def mark_as_deleted(self, current_path, prefix):
         """实现孤本保护：重命名文件夹添加警告前缀"""
-        if not os.path.exists(current_path): 
+        if not os.path.exists(current_path):
             return current_path
-            
+
         dir_name = os.path.basename(current_path)
         if not dir_name.startswith(prefix):
             new_dir_name = f"{prefix} {dir_name}"

@@ -150,21 +150,6 @@ def test_download_video_uses_path_ffmpeg_when_configured_file_is_missing(monkeyp
     assert cmd[ffmpeg_location_index] == "/usr/bin"
 
 
-def test_download_video_does_not_auto_install_ytdlp_when_missing_from_path(monkeypatch, tmp_path, capsys):
-    config = make_config(min_disk_gb=0)
-    config["components"]["yt-dlp"]["path"] = str(tmp_path / "bin" / "yt-dlp")
-    downloader = Downloader(config)
-    calls = []
-
-    monkeypatch.setattr(downloader, "convert_cookie_to_netscape", lambda cookie_path: cookie_path)
-    monkeypatch.setattr(downloader, "random_sleep", lambda action_type="download": None)
-    monkeypatch.setattr(downloader, "_convert_downloaded_danmaku", lambda *_: None)
-    missing_ytdlp_paths = {
-        config["components"]["yt-dlp"]["path"],
-        config["components"]["yt-dlp"]["path"] + ".exe",
-    }
-
-
 def process_is_running(pid):
     if os.name == "nt":
         import ctypes
@@ -192,6 +177,21 @@ def process_is_running(pid):
     except ProcessLookupError:
         return False
     return True
+
+
+def test_download_video_does_not_auto_install_ytdlp_when_missing_from_path(monkeypatch, tmp_path, capsys):
+    config = make_config(min_disk_gb=0)
+    config["components"]["yt-dlp"]["path"] = str(tmp_path / "bin" / "yt-dlp")
+    downloader = Downloader(config)
+    calls = []
+
+    monkeypatch.setattr(downloader, "convert_cookie_to_netscape", lambda cookie_path: cookie_path)
+    monkeypatch.setattr(downloader, "random_sleep", lambda action_type="download": None)
+    monkeypatch.setattr(downloader, "_convert_downloaded_danmaku", lambda *_: None)
+    missing_ytdlp_paths = {
+        config["components"]["yt-dlp"]["path"],
+        config["components"]["yt-dlp"]["path"] + ".exe",
+    }
     monkeypatch.setattr(
         "app.core.downloader.os.path.exists",
         lambda path: path not in missing_ytdlp_paths,

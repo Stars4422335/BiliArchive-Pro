@@ -56,3 +56,11 @@ Thumbs.db
 /ledger_batch_tmp.json
 /try_batch.json
 /try_fid.json
+
+# 10. 质量门禁工具的本地缓存与覆盖率报告
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.mypy_cache/
+.ruff_cache/

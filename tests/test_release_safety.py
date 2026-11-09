@@ -3,7 +3,6 @@ from pathlib import Path
 
 from app import __version__
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LOCAL_PLAN = "本地任务计划与执行表.md"
 

@@ -23,7 +23,6 @@ from datetime import datetime
 from app.core.runtime_state import update_runtime
 from app.core.secure_file import atomic_write_text
 
-
 COMMAND_TRIGGER_SCAN = "trigger_scan"
 COMMAND_RESTART = "restart"
 COMMAND_REDOWNLOAD_ASSET = "redownload_asset"

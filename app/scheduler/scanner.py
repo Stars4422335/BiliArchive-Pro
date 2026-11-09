@@ -10,9 +10,9 @@ this module keeps the constructor, the progress callback and the public
 # `MetadataGenerator` methods are attributes of shared objects, so patching
 # them here reaches every mixin unchanged.
 import asyncio  # noqa: F401
-from app.core.metadata import MetadataGenerator  # noqa: F401
 
 from app.core.downloader import Downloader
+from app.core.metadata import MetadataGenerator  # noqa: F401
 from app.core.parser import BiliParser
 
 from .sources.articles import ArticlesMixin

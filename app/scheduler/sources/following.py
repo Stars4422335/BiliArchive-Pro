@@ -2,6 +2,7 @@
 
 from app.core.metadata import MetadataGenerator
 
+
 class FollowingMixin:
 
     async def scan_following(self, mid, up_name=None):

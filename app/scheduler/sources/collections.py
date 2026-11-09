@@ -2,6 +2,7 @@
 
 from app.core.metadata import MetadataGenerator
 
+
 class CollectionsMixin:
 
     async def scan_collection(self, collection_id, collection_name, mid):
@@ -11,7 +12,7 @@ class CollectionsMixin:
             return
 
         print(f"\n[>>>] 开始扫描合集: {collection_name} (ID: {collection_id})")
-        
+
         page = 1
         has_more = True
 
@@ -61,7 +62,7 @@ class CollectionsMixin:
                         self.db.update_last_check(db_key)
                         continue
                     print(f"[!] 数据库记录对应媒体不完整，准备续跑修复: {title}")
-                    
+
                 print(f"[*] 发现新视频，准备抓取: {title}")
                 download_result = await self._download_video_item(collection_name, item)
 
@@ -78,11 +79,11 @@ class CollectionsMixin:
                         downloaded_count=self.global_download_count,
                         message=f"已归档视频：{title}",
                     )
-                    
+
                     if self.max_global_downloads and self.global_download_count >= self.max_global_downloads:
                         print(f"\n[✓] 【全局限制】已成功下载 {self.max_global_downloads} 个资源，本轮结束！")
                         return
-            
+
             page += 1
             if has_more:
                 await self._wait_for_next_page()
