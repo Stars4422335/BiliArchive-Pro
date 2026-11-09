@@ -363,6 +363,72 @@ def test_metadata_generator_creates_matching_episode_and_show_nfos(tmp_path):
     assert show.findtext("title") == "测试多P"
 
 
+def test_metadata_generator_omits_art_element_when_no_art_path_given(tmp_path):
+    """不传 art_path 时 NFO 里不能出现 <art>：既有输出必须逐字不变。"""
+    MetadataGenerator.create_nfo(
+        {
+            "title": "测试标题",
+            "bvid": "BV123",
+            "up_name": "测试UP",
+            "intro": "简介",
+        },
+        str(tmp_path),
+        status="Active",
+    )
+
+    root = ET.parse(tmp_path / "测试标题.nfo").getroot()
+
+    assert root.find("art") is None
+
+
+def test_metadata_generator_writes_art_relative_to_the_nfo_directory(tmp_path):
+    """art_path 指向同目录封面时，NFO 里写相对文件名而不是本机绝对路径。"""
+    poster = tmp_path / "poster.jpg"
+    poster.write_bytes(b"jpeg")
+
+    MetadataGenerator.create_nfo(
+        {
+            "title": "测试标题",
+            "bvid": "BV123",
+            "up_name": "测试UP",
+            "intro": "简介",
+        },
+        str(tmp_path),
+        status="Active",
+        art_path=str(poster),
+    )
+
+    root = ET.parse(tmp_path / "测试标题.nfo").getroot()
+
+    assert root.findtext("art") == "poster.jpg"
+
+
+def test_metadata_generator_writes_art_with_posix_separators_for_parent_artwork(tmp_path):
+    """封面在上级目录时写 POSIX 风格的相对路径，Windows 与 Linux 表现一致。"""
+    media_dir = tmp_path / "Season 01"
+    media_dir.mkdir()
+    poster = tmp_path / "poster.jpg"
+    poster.write_bytes(b"jpeg")
+
+    MetadataGenerator.create_episode_nfo(
+        {
+            "title": "测试多P",
+            "bvid": "BV123",
+            "up_name": "测试UP",
+            "intro": "简介",
+        },
+        str(media_dir),
+        "S01E01 - 第一集",
+        1,
+        "第一集",
+        art_path=str(poster),
+    )
+
+    root = ET.parse(media_dir / "S01E01 - 第一集.nfo").getroot()
+
+    assert root.findtext("art") == "../poster.jpg"
+
+
 def test_metadata_generator_copies_ytdlp_thumbnail_to_standard_artwork_name(tmp_path):
     media_dir = tmp_path / "Season 01"
     media_dir.mkdir()

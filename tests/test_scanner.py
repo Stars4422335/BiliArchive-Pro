@@ -436,6 +436,46 @@ def test_single_part_download_keeps_movie_layout_and_matching_nfo(tmp_path):
     assert (video_dir / "poster.jpg").exists()
 
 
+def test_single_part_nfo_points_art_at_the_poster_next_to_it(tmp_path):
+    """单P 视频：NFO 与 poster.jpg 同目录，<art> 应写成同目录相对文件名。"""
+    scanner, database, _ = build_media_output_scanner(
+        tmp_path,
+        plex_mode=True,
+        pages=[{"page": 1, "part": "单集"}],
+    )
+
+    asyncio.run(scanner.scan_favorite(99, "测试收藏夹"))
+
+    call = scanner.downloader.calls[0]
+    video_dir = Path(database.records["BV123"]["path"])
+    nfo = ET.parse(video_dir / f"{call['file_name']}.nfo").getroot()
+
+    assert (video_dir / "poster.jpg").exists()
+    assert nfo.findtext("art") == "poster.jpg"
+
+
+def test_multi_part_episode_nfo_points_art_at_its_own_thumbnail(tmp_path):
+    """多P 视频：每一集用自己同目录的 -thumb.jpg，不共用根目录的 poster.jpg。"""
+    scanner, database, _ = build_media_output_scanner(
+        tmp_path,
+        plex_mode=True,
+        pages=[
+            {"page": 1, "part": "第一集"},
+            {"page": 2, "part": "第二集"},
+        ],
+    )
+
+    asyncio.run(scanner.scan_favorite(99, "测试收藏夹"))
+
+    for call in scanner.downloader.calls:
+        media_dir = Path(call["save_dir"])
+        stem = call["file_name"]
+        episode = ET.parse(media_dir / f"{stem}.nfo").getroot()
+
+        assert (media_dir / f"{stem}-thumb.jpg").exists()
+        assert episode.findtext("art") == f"{stem}-thumb.jpg"
+
+
 def test_incomplete_multi_part_record_is_redownloaded(tmp_path):
     scanner, database, path_manager = build_media_output_scanner(
         tmp_path,

@@ -56,7 +56,33 @@ class MetadataGenerator:
         )
 
     @staticmethod
-    def _add_common_fields(root, video_info, status="Active"):
+    def _art_reference(art_path, save_path):
+        """把封面路径换算成相对 NFO 所在目录的 POSIX 风格相对路径。
+
+        NFO 会被搬到别的机器、别的目录下使用，写死本机绝对路径既不
+        可移植也泄露本机目录结构；媒体库解析相对路径时以 NFO 所在
+        目录为基准，因此这里统一转成相对引用。
+        """
+        if not art_path:
+            return None
+        reference = str(art_path).strip()
+        if not reference:
+            return None
+        if os.path.isabs(reference):
+            try:
+                reference = os.path.relpath(reference, save_path)
+            except ValueError:
+                # Windows 上跨盘符无法表达相对路径，宁可不写也不写错
+                return None
+        # 两种分隔符都替换：Windows 上 os.sep 是 "\\"，
+        # 但传入的路径也可能来自正斜杠拼接的字符串。
+        reference = reference.replace("\\", "/")
+        while reference.startswith("./"):
+            reference = reference[2:]
+        return reference or None
+
+    @staticmethod
+    def _add_common_fields(root, video_info, status="Active", art_path=None):
         title = str(video_info.get("title") or "未知标题")
         unique_id = str(video_info.get("bvid") or "")
         up_name = str(video_info.get("up_name") or "未知UP主")
@@ -96,6 +122,10 @@ class MetadataGenerator:
         if outline:
             ET.SubElement(root, "outline").text = outline
 
+        # <art>：封面引用。同样只在调用方显式提供时才写。
+        if art_path:
+            ET.SubElement(root, "art").text = art_path
+
     @staticmethod
     def _write_nfo(root, nfo_path, base_dir=None):
         try:
@@ -113,13 +143,19 @@ class MetadataGenerator:
             return None
 
     @staticmethod
-    def create_nfo(video_info, save_path, status="Active", file_stem=None):
+    def create_nfo(video_info, save_path, status="Active", file_stem=None, art_path=None):
         """
         生成与单个媒体文件同名的 movie NFO。
         status: Active(正常), Tombstoned(墓碑), Protected(源端删本地存)
+        art_path: 封面文件路径；给出时在 NFO 里写入 <art> 相对引用
         """
         root = ET.Element("movie")
-        MetadataGenerator._add_common_fields(root, video_info, status)
+        MetadataGenerator._add_common_fields(
+            root,
+            video_info,
+            status,
+            art_path=MetadataGenerator._art_reference(art_path, save_path),
+        )
         stem = MetadataGenerator._safe_stem(
             file_stem if file_stem is not None else video_info.get("title", "info")
         )
@@ -143,6 +179,7 @@ class MetadataGenerator:
         file_stem,
         episode_number,
         episode_title,
+        art_path=None,
     ):
         """为单个分P生成与媒体同名的 episode NFO。"""
         episode_info = dict(video_info)
@@ -152,7 +189,11 @@ class MetadataGenerator:
             episode_info["bvid"] = f"{bvid}-P{episode_number}"
 
         root = ET.Element("episodedetails")
-        MetadataGenerator._add_common_fields(root, episode_info)
+        MetadataGenerator._add_common_fields(
+            root,
+            episode_info,
+            art_path=MetadataGenerator._art_reference(art_path, save_path),
+        )
         ET.SubElement(root, "showtitle").text = str(
             video_info.get("title") or "未知标题"
         )

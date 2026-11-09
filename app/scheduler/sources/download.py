@@ -121,13 +121,8 @@ class DownloadMixin:
                 return None
 
             self._attach_outline(item, media_dir, file_name)
-            if not MetadataGenerator.create_nfo(
-                item,
-                media_dir,
-                status="Active",
-                file_stem=file_name,
-            ):
-                return None
+            # 封面先就位、NFO 后生成：NFO 里的 <art> 要指向这份封面，
+            # 顺序反了就会写进一个还不存在的文件。
             poster_path = MetadataGenerator.copy_artwork(
                 media_dir,
                 file_name,
@@ -135,6 +130,14 @@ class DownloadMixin:
             )
             if not poster_path:
                 print(f"[-] 视频封面整理失败，未记录完成状态: {bvid}")
+                return None
+            if not MetadataGenerator.create_nfo(
+                item,
+                media_dir,
+                status="Active",
+                file_stem=file_name,
+                art_path=poster_path,
+            ):
                 return None
             return video_dir, 1
 
@@ -169,27 +172,7 @@ class DownloadMixin:
             if index == 1:
                 self._attach_outline(item, media_dir, file_name)
 
-            if getattr(self.path_mgr, "plex_mode", False):
-                nfo_path = MetadataGenerator.create_episode_nfo(
-                    item,
-                    media_dir,
-                    file_name,
-                    index,
-                    part_title,
-                )
-            else:
-                part_info = dict(item)
-                part_info["title"] = part_title
-                part_info["bvid"] = f"{bvid}-P{index}"
-                nfo_path = MetadataGenerator.create_nfo(
-                    part_info,
-                    media_dir,
-                    status="Active",
-                    file_stem=file_name,
-                )
-            if not nfo_path:
-                return None
-
+            # 先整理本集封面，再生成本集 NFO：<art> 要指向同目录的 -thumb.jpg
             thumb_path = MetadataGenerator.copy_artwork(
                 media_dir,
                 file_name,
@@ -200,6 +183,30 @@ class DownloadMixin:
                     f"[-] 多P视频第 {index}/{part_count} 集封面整理失败: {bvid}"
                 )
                 return None
+
+            if getattr(self.path_mgr, "plex_mode", False):
+                nfo_path = MetadataGenerator.create_episode_nfo(
+                    item,
+                    media_dir,
+                    file_name,
+                    index,
+                    part_title,
+                    art_path=thumb_path,
+                )
+            else:
+                part_info = dict(item)
+                part_info["title"] = part_title
+                part_info["bvid"] = f"{bvid}-P{index}"
+                nfo_path = MetadataGenerator.create_nfo(
+                    part_info,
+                    media_dir,
+                    status="Active",
+                    file_stem=file_name,
+                    art_path=thumb_path,
+                )
+            if not nfo_path:
+                return None
+
             if index == 1:
                 poster_path = MetadataGenerator.copy_artwork(
                     media_dir,
