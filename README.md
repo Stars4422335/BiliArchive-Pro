@@ -3,7 +3,7 @@
 > **带本地 WebUI 的 Bilibili 个人数字资产备份、同步与媒体库整理工具**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Release: v1.8.0](https://img.shields.io/badge/release-v1.8.0-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.8.0)
+[![Release: v1.8.1](https://img.shields.io/badge/release-v1.8.1-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.8.1)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 
 **简体中文** | [English](README.en.md)
@@ -321,7 +321,7 @@ python main.py --cli --limit 3
 
 ```bash
 # 打出新版本并推送标签，CI 会自动构建各平台产物
-git tag -a v1.8.0 -m "v1.8.0" && git push origin v1.8.0
+git tag -a v1.8.1 -m "v1.8.1" && git push origin v1.8.1
 ```
 
 若需在本机打包：
@@ -356,7 +356,17 @@ cd webui && npm ci && npm run lint && npm test && npm run build
 
 ---
 
-## 🧾 最新改进（v1.8.0）
+## 🧾 最新改进（v1.8.1）
+
+完整版本说明见 [CHANGELOG.md](CHANGELOG.md)。
+
+**NFO 里写明封面位置**
+
+- 生成的 NFO 现在带 `<art>` 元素，指向这条媒体自己的封面：单 P 视频指向同目录的 `poster.jpg`，多 P 每一集指向自己同目录的 `<stem>-thumb.jpg`。
+- 写的是**相对 NFO 所在目录的相对路径**（统一用正斜杠），不写本机绝对路径——NFO 换机器、换目录后依然有效，也不会把本机目录结构写进媒体库。
+- 不给封面路径时，NFO 与以前逐字一致，既有媒体库不会因为多出一个标签而重新刮削。
+
+### v1.8.0 改进
 
 完整版本说明见 [CHANGELOG.md](CHANGELOG.md)。
 

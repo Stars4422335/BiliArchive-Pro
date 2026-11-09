@@ -3,7 +3,7 @@
 > **Back up, sync, and organize your personal Bilibili assets — with a local WebUI**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Release: v1.8.0](https://img.shields.io/badge/release-v1.8.0-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.8.0)
+[![Release: v1.8.1](https://img.shields.io/badge/release-v1.8.1-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.8.1)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 
 [简体中文](README.md) | **English**
@@ -304,7 +304,7 @@ The core engine can be packaged as a directory-distributed executable. **Since v
 
 ```bash
 # tag and push; CI builds Windows, macOS, and Linux artifacts
-git tag -a v1.8.0 -m "v1.8.0" && git push origin v1.8.0
+git tag -a v1.8.1 -m "v1.8.1" && git push origin v1.8.1
 ```
 
 To package locally instead:
@@ -334,7 +334,17 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guide and the a
 
 ---
 
-## 🧾 What's new (v1.8.0)
+## 🧾 What's new (v1.8.1)
+
+Full details in [CHANGELOG.md](CHANGELOG.md).
+
+**The NFO now says where its artwork is**
+
+- Generated NFOs carry an `<art>` element pointing at the artwork of that very item: a single-P video points at the `poster.jpg` next to it, and each part of a multi-P video points at its own `<stem>-thumb.jpg`.
+- The reference is **relative to the directory the NFO lives in** (always with forward slashes), never an absolute path on this machine - so the NFO keeps working after the library is moved, and it does not leak the local directory layout into the media library.
+- Without an artwork path the NFO is byte-for-byte what it was before, so existing libraries are not re-scraped just because a new tag appeared.
+
+### v1.8.0
 
 Full details in [CHANGELOG.md](CHANGELOG.md).
 

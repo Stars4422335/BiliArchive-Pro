@@ -2,6 +2,15 @@
 
 本文件记录正式发布版本的用户可见变更。版本号遵循语义化版本格式。
 
+## [1.8.1] - 2026-11-09
+
+### NFO 里写明封面位置
+
+- 生成的 NFO 现在带 `<art>` 元素，指向这条媒体自己的封面：单 P 视频指向同目录的 `poster.jpg`，多 P 每一集指向自己同目录的 `<stem>-thumb.jpg`（剧集级的 `tvshow.nfo` 不变）。
+- 写的是**相对 NFO 所在目录的相对路径**，统一用正斜杠分隔。不写本机绝对路径有两个理由：NFO 换机器、换目录后依然有效；媒体库里不会出现本机目录结构。
+- 下载流程相应调整了顺序：封面先就位、NFO 后生成。原来的顺序先生成 NFO 再整理封面，`<art>` 会指向一个当时还不存在的文件。
+- 不给封面路径时 NFO 与以前逐字一致，既有媒体库不会因为多出一个标签而重新刮削。
+
 ## [1.8.0] - 2026-11-09
 
 ### 结构性重构：三个上帝文件被拆开
@@ -296,7 +305,8 @@
 - 如果 `data/cookie.json` 曾被上传、打包或共享，应重新登录，使旧凭据失效。
 - 本版本不提供 EXE 或 App；跨平台独立可执行文件仍属于后续阶段。
 
-[Unreleased]: https://github.com/Stars4422335/BiliArchive-Pro/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/Stars4422335/BiliArchive-Pro/compare/v1.8.1...HEAD
+[1.8.1]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.8.1
 [1.8.0]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.8.0
 [1.7.1]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.7.1
 [1.7.0]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.7.0

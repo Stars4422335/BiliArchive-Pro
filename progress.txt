@@ -816,3 +816,47 @@ cookie 不在响应体里了，而是**访问这个一次性 ticket 地址，从
   需要在写 NFO 之后再补一遍——属于可选增强，本轮没做。
 - 下载产物（23.5 MB）按约定保留在 downloads/ 供检查，清理需用户同意。
 - 本轮又重建了运行时镜像，构建缓存重新长起来，收尾要再清一次。
+
+## 2026-11-09 - Task: v1.8.0 正式发布 + NFO `<art>` 增强（v1.8.1）
+
+### What was done:
+**第一部分：发布流水线修掉一个真问题**
+
+v1.8.0 首次发布卡住：macos-x64 作业永远停在 `queued`，另外三个平台早就传完了。
+根因是上一轮加发布矩阵时用了 `macos-13` 这个 runner label，而 GitHub 已于
+**2025-12-04 退役**该镜像（只维护最新两个 macOS 版本）。
+
+关键在于**下线 label 不报错，只是无限排队**——所以它看起来像"GitHub 排不上队"，
+而不是"配置写错了"。真要是照着"再等等"处理，这个 Release 会永远挂着。
+
+修法：改用官方退役公告指定的 `macos-15-intel`（可用到 2027 年 8 月 macOS 15 镜像
+退役）。全仓 5 处提到旧 label 的地方（CHANGELOG、两个 README、progress.txt、计划书）
+一并更新。修复发生在标签之后，于是删掉并重打 `v1.8.0` 指向新提交（Release 当时
+仍是 Draft，重打安全）。第二轮 run 六个作业全绿，Release 转正式发布，四个平台
+产物齐全。
+
+**第二部分：`<art>` 增强**
+
+按 TDD 做：先写 5 个测试并确认它们真的失败（2 个因 `art_path` 参数不存在报
+TypeError，3 个因 `<art>` 元素不存在断言失败），再写实现。
+
+- `MetadataGenerator._art_reference()` 把封面路径换算成**相对 NFO 所在目录**的
+  POSIX 风格相对路径；`create_nfo` / `create_episode_nfo` 新增可选 `art_path`，
+  不传则 NFO 与以前逐字一致。
+- 下载流程调了顺序：**封面先就位、NFO 后生成**。原来的顺序先生成 NFO 再整理封面，
+  `<art>` 会指向一个当时还不存在的文件。
+- 单 P 视频指向同目录的 `poster.jpg`；多 P 每一集指向自己同目录的
+  `<stem>-thumb.jpg`（不用根目录的 poster.jpg）；`tvshow.nfo` 不变。
+
+### Testing:
+- 门禁：pytest **371 passed** ✅ / ruff ✅ / mypy 31 文件 ✅ / 覆盖率 **74.91%** ≥ 74%
+- 前端 vitest 35 passed ✅
+- **真实产物验证**：用 downloads/ 里上一轮真实下载的 BV1FXHs68Eh1 资产跑生产函数，
+  art 引用算出 `poster.jpg`，按引用解析到的文件确实存在；同一资产的新 NFO 里
+  `<art>` 指向真实文件，不传 art_path 时不出现 `<art>`，其它字段无退化
+- Docker 容器内 backend-test / webui-test 全绿
+
+### Notes:
+- `<art>` 写相对路径而非本机绝对路径有两个理由：NFO 换机器换目录后依然有效；
+  媒体库里不会出现本机目录结构。
+- v1.8.0 的 Release 保持原样未动，`<art>` 作为补丁版本 v1.8.1 单独发布。
