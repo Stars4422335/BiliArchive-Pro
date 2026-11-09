@@ -637,3 +637,72 @@ F3（防"存在但损坏"的静默失败）：
 - 测试必须用 ./venv/Scripts/python.exe（系统 Python 3.11-32bit 缺 fastapi 等依赖）
 - mimosa git-gate 误报问题：在本项目目录下开会话即可正常 commit（hook 基线只含本项目），
   勿在 D:\DSH 工作区下操作本仓库提交
+
+## 2026-11-09 - Task: 结构性重构 + 质量门禁 + Docker 测试闭环（v1.8.0）
+
+### What was done:
+
+**拆三个上帝文件**（全程保持测试数只增不减）
+- app/scheduler/scanner.py 1038 行 → 2.3 KB：23 个方法按来源拆进
+  app/scheduler/sources/ 下十个 mixin。FavScanner 保留为门面，
+  FavScanner.__new__、FavScanner._video_asset_key、main.FavScanner
+  三个既有耦合点零破坏（关键：测试用 __new__ 绕过 __init__，
+  所以 mixin 的方法必须容忍 __init__ 没跑过）
+- main.py 737 行 → 141 行：守护循环进 app/scheduler/daemon.py，
+  凭据校验进 app/core/auth.py，命令调度进 app/core/commands.py
+- app/webui/service.py 557 行 → 约 130 行：读路径按查询域拆进
+  app/webui/queries/（settings / assets / overview / runtime）
+
+**质量门禁**
+- ruff.toml（F+E+W+B+I）、mypy.ini（app/core + app/scheduler）、
+  CI 新增 lint 作业、测试作业带 --cov-fail-under=74（重构前基线）
+- 门禁当场抓出一个空壳测试：
+  test_download_video_does_not_auto_install_ytdlp_when_missing_from_path
+  的函数体被 process_is_running 辅助函数截断，四条断言落在 return
+  之后从未执行。辅助函数移回文件顶部后断言恢复运行并通过
+  ——生产行为一直是对的，只有测试是空壳
+
+**Docker 测试闭环**
+- Dockerfile 新增 webui-test / backend-test 命名 target
+- docker-compose.yml 新增 test profile
+- scripts/test-all.ps1 与 .sh：一键跑完全部检查并输出统一结论表
+- 容器内测试暴露了本地跑不到的两件事：
+  1) 发布安全守卫读仓库元数据，而运行时镜像刻意不带（Docker 也不允许
+     COPY .dockerignore），故镜像里显式 skip，改由 CI 普通作业在完整检出上执行
+  2) 进程树测试把僵尸进程当活进程——只有没有 init 回收孤儿进程的容器里才暴露
+
+**功能补齐**
+- 资产列表改游标分页：assets 表已有 (last_check DESC, bvid) 索引，
+  原先 OFFSET 深分页会扫描并丢弃前面每一行。响应带 next_cursor，
+  面板翻页直接带游标走索引。OFFSET 路径保留
+- 弹幕词云可在面板打开：/api/assets/{id}/wordcloud，
+  查找沿用封面的"不许越出下载根目录"约束
+- 发布矩阵新增 macOS Intel（macos-13）
+- login.py 新增 --qr 非交互扫码：二维码写 PNG，扫完保存凭据
+
+**craft-anything 用作证据引擎**
+- 装 craft-anything v0.5.0 预编译版（SHA256 校验通过），注册为 MCP server
+- 用 db_sqlite_show 固化 assets 表结构与索引基线：
+  idx_assets_lastcheck(last_check DESC, bvid) 正好支撑游标分页，
+  因此不需要新增索引
+- 用 js_app_map 记录生产包构成；用 web_site_open 记录 B 站访客视角
+  与本项目 WebUI 的渲染基线（含 375 CSS 视口）
+
+### Testing:
+- 后端 pytest：347 → 357 passed（新增游标分页 6 例、词云入口 4 例）
+- 前端 vitest：33 → 35 passed
+- 覆盖率：74% → 75%（门槛 74%）
+- ruff：All checks passed；mypy：30 files 无问题
+- 容器内 backend-test：343 passed / 4 skipped，覆盖率门槛通过
+- 容器内 webui-test：全绿
+- 一键脚本 test-all.ps1：本地与容器结论表全部 PASS
+
+### Notes:
+- 本机 Docker daemon 间歇性 500：宿主到引擎 VM 的路由被 WireGuard 隧道
+  （szc-G 装了一条 192.168.0.0/16 metric 0）劫持，192.168.65.7 落在该 /16 内。
+  重启 Docker Desktop 可恢复；test-all 脚本在 daemon 不可达时把容器步骤
+  标 SKIP 而不是伪装成通过
+- Docker 数据盘 ext4.vhdx 在 C 盘（15.45 GB），prune 只释放 VHDX 内部，
+  宿主文件不会自动缩小，真正回收需要压缩
+- 测试必须用 ./venv/Scripts/python.exe
+- 提交在 feature/refactor-architecture 分支，未推送 origin/main

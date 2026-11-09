@@ -11,12 +11,13 @@
     as they finish and leave nothing behind.
 
 .EXAMPLE
-    pwsh -File scripts/test-all.ps1
-    pwsh -File scripts/test-all.ps1 -SkipDocker
+    powershell -NoProfile -File scripts/test-all.ps1
+    powershell -NoProfile -File scripts/test-all.ps1 -SkipDocker
 #>
 [CmdletBinding()]
 param(
-    [switch]$SkipDocker
+    [switch]$SkipDocker,
+    [switch]$RepairDocker
 )
 
 $ErrorActionPreference = 'Continue'
@@ -86,6 +87,17 @@ if (-not $SkipDocker) {
     # 192.168.65.x with it, and the daemon stops answering. Say so instead
     # of reporting a green run that skipped the container checks.
     & docker version --format '{{.Server.Version}}' 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0 -and $RepairDocker) {
+        Write-Host "--- Docker daemon 不可达，尝试重启 Docker Desktop ---" -ForegroundColor Yellow
+        Get-Process -Name 'Docker Desktop', 'com.docker.backend', 'com.docker.build' -ErrorAction SilentlyContinue |
+            ForEach-Object { $null = $_.CloseMainWindow() }
+        Start-Sleep -Seconds 6
+        Get-Process -Name 'Docker Desktop', 'com.docker.backend', 'com.docker.build' -ErrorAction SilentlyContinue |
+            Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Process -FilePath "$env:ProgramFiles\Docker\Docker\Docker Desktop.exe" | Out-Null
+        Start-Sleep -Seconds 40
+        & docker version --format '{{.Server.Version}}' 2>&1 | Out-Null
+    }
     if ($LASTEXITCODE -ne 0) {
         Write-Host ""
         Write-Host "!!! Docker daemon 不可达：容器内验证无法执行（标记为 SKIP，不算通过）" -ForegroundColor Yellow

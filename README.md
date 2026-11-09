@@ -3,7 +3,7 @@
 > **带本地 WebUI 的 Bilibili 个人数字资产备份、同步与媒体库整理工具**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Release: v1.7.1](https://img.shields.io/badge/release-v1.7.1-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.7.1)
+[![Release: v1.8.0](https://img.shields.io/badge/release-v1.8.0-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.8.0)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 
 **简体中文** | [English](README.en.md)
@@ -356,7 +356,7 @@ cd webui && npm ci && npm run lint && npm test && npm run build
 
 ---
 
-## 🧾 最新改进（v1.7.1）
+## 🧾 最新改进（v1.8.0）
 
 完整版本说明见 [CHANGELOG.md](CHANGELOG.md)。
 

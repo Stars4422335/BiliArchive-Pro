@@ -3,7 +3,7 @@
 > **Back up, sync, and organize your personal Bilibili assets — with a local WebUI**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Release: v1.7.1](https://img.shields.io/badge/release-v1.7.1-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.7.1)
+[![Release: v1.8.0](https://img.shields.io/badge/release-v1.8.0-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.8.0)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 
 [简体中文](README.md) | **English**
@@ -334,7 +334,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guide and the a
 
 ---
 
-## 🧾 What's new (v1.7.1)
+## 🧾 What's new (v1.8.0)
 
 Full details in [CHANGELOG.md](CHANGELOG.md).
 

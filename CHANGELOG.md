@@ -2,6 +2,36 @@
 
 本文件记录正式发布版本的用户可见变更。版本号遵循语义化版本格式。
 
+## [1.8.0] - 2026-11-09
+
+### 结构性重构：三个上帝文件被拆开
+
+- **`app/scheduler/scanner.py`（1038 行 → 2.3 KB）**：23 个方法按来源拆进 `app/scheduler/sources/` 下的十个 mixin（收藏夹 / 稍后再看 / 关注 / 图文 / 合集 / 历史 / 完整性 / 下载 / 强制重下 / 共享原语）。`FavScanner` 保留为门面，构造函数、进度回调和公开名字不变，CLI、WebUI 与测试都无需改用法。
+- **`main.py`（737 行 → 141 行）**：只做解析参数、读配置、装配启动三件事。守护循环搬进 `app/scheduler/daemon.py`，凭据校验搬进 `app/core/auth.py`，命令调度搬进 `app/core/commands.py`。
+- **`app/webui/service.py`（557 行 → 约 130 行）**：读路径按查询域拆进 `app/webui/queries/`（settings / assets / overview / runtime），`WebService` 保留为 API 层直接使用的门面。
+
+### 质量门禁
+
+- 新增 `ruff.toml`（pyflakes + pycodestyle + bugbear + isort）与 `mypy.ini`（先覆盖 `app/core` 与 `app/scheduler`），CI 增加 `lint` 作业。
+- 测试作业改为带覆盖率运行，并设 **74% 的覆盖率下限**——这是重构前的基线，门槛只会往上走。
+- **门禁当场抓出一个一直没在跑的测试**：`test_download_video_does_not_auto_install_ytdlp_when_missing_from_path` 的函数体被一个辅助函数截断，四条断言落在 `return` 之后从未执行。辅助函数移回文件顶部后断言恢复运行，结果通过——生产行为一直是对的，只有测试是空壳。
+
+### Docker 测试闭环
+
+- `Dockerfile` 新增 `webui-test` 与 `backend-test` 两个命名 target，`docker-compose.yml` 新增 `test` profile，`scripts/test-all.ps1` / `.sh` 一条命令跑完全部检查并输出统一结论表。容器用 `run --rm`，跑完即销，不留残留。
+- **在容器里跑测试暴露了本地跑不到的两件事**：发布安全守卫读的是仓库元数据，而运行时镜像刻意不带这些文件（Docker 也不允许把 `.dockerignore` COPY 进镜像），因此这些用例在镜像里显式跳过、改由 CI 的普通测试作业在完整检出上执行；进程树测试把僵尸进程当成活着的进程——只有在没有 init 回收孤儿进程的容器里才会暴露。
+
+### 功能补齐
+
+- **资产列表改为游标分页**：`assets` 表本来就有 `(last_check DESC, bvid)` 索引，深分页原先用 OFFSET 会扫描并丢弃前面的每一行。现在响应带上 `next_cursor`，面板翻页时直接带游标走索引；OFFSET 路径保留给还没有游标的调用。排序把 `last_check` 为空的资产排在最后，游标比较专门处理了这一段。
+- **弹幕词云可以在面板里打开了**：词云早就写在媒体旁边的 `<stem>.wordcloud.svg`，但面板够不着它，只能在磁盘上看。现在详情抽屉里有入口，API 通过 `/api/assets/{id}/wordcloud` 提供，查找沿用与封面相同的"不许越出下载根目录"约束。
+- **发布矩阵新增 macOS Intel 产物**（`macos-13`），此前只有 arm64。
+
+### 其他
+
+- `login.py` 新增 `--qr` 非交互扫码模式：二维码写成 PNG 文件交给用户扫，扫完保存凭据。终端二维码在自动化流程里没法被人扫到。
+- 移除了 `main.py` 里两个无人引用的死导入，以及 `zip()` 缺省 `strict`、两处单行 `if`、一个未使用的局部变量、一处闭包捕获循环变量——运行时行为均未改变。
+
 ## [Unreleased]
 
 ### 测试平台化修正
@@ -266,7 +296,8 @@
 - 如果 `data/cookie.json` 曾被上传、打包或共享，应重新登录，使旧凭据失效。
 - 本版本不提供 EXE 或 App；跨平台独立可执行文件仍属于后续阶段。
 
-[Unreleased]: https://github.com/Stars4422335/BiliArchive-Pro/compare/v1.7.1...HEAD
+[Unreleased]: https://github.com/Stars4422335/BiliArchive-Pro/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.8.0
 [1.7.1]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.7.1
 [1.7.0]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.7.0
 [1.6.0]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.6.0
