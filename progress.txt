@@ -732,3 +732,56 @@ Docker 数据盘在 C 盘，本轮构建三个镜像把 VHDX 撑大了近 10 GB�
   - 1024 宽：152 / 754,992 像素变化（0.0201%），差异包围盒 13×18 px
   - 差异全部落在「磁盘可用 495.7 GB → 495.0 GB」这一个活值上
   - 即：**重构对概览页是像素级等价的**
+## 2026-11-09 - Task: B站扫码登录协议变更的适配（Phase 6 前置）
+
+### What was done:
+
+扫码时发现「登录成功但凭据全空」，一路查到根因：**B 站改了扫码登录的响应结构**。
+
+**旧结构**（库与文档假设的）：`get_events` 在 code=0 时把 cookie 直接写在 `url` 里，
+形如 `?DedeUserID=…&SESSDATA=…&bili_jct=…`。
+
+**新结构**（实测抓到的原始响应）：
+```json
+{
+  "url": "https://passport.biligame.com/x/passport-login/web/crossDomain?ticket=…&gourl=…&first_domain=…",
+  "refresh_token": "",
+  "timestamp": 1794199716918,
+  "code": 0
+}
+```
+cookie 不在响应体里了，而是**访问这个一次性 ticket 地址，从响应的 `Set-Cookie` 头里取**。
+
+`bilibili_api` 的 `QrCodeLogin` 还在老地方找 cookie（`if cookie[:8] == "SESSDATA"`），
+于是三个字段全是空字符串——手机确认了、凭据文件也写了，但里面什么都没��。
+引擎随后报 -101，看起来像"登录过期"，其实是"从没登录上"。
+
+**排查过程中排除的两个误判**（都记下来，别再走一遍）：
+1. 一开始以为是 cookie 串用 `& ` 分隔、每个字段前带空格导致切分失败——自己写的容错解析器
+   （strip + 大小写不敏感 + `&`/`;` 两种分隔符）覆盖了这种情况却仍然返回空，说明不是它。
+2. 以为是库版本落后：PyPI 最新 **17.4.2**（2026-06-19）下下来对比，`check_state`
+   用的是**完全相同**的解析代码。这是 B 站改了协议而库没跟上，不是依赖过期。
+
+**修法**（`app/core/bili_login.py`）：
+- 自己发那两个 qrcode 请求，自己解析
+- 识别到 `ticket=` 就走 ticket 交换：用 httpx 访问该地址，**同时**从
+  ① `client.cookies`（跟随重定向累积下来的 cookie jar，`response.cookies` 只含最后一条响应）
+  ② 原始 `Set-Cookie` 头（按域匹配的 jar 可能拒收跨域下发的凭据——ticket 地址在
+  passport.biligame.com，凭据却是 .bilibili.com 的）
+  两处读取
+- 老格式（cookie 直接在 URL 里）保留为回退
+- `login.py` 交互式与 `--qr` 两条路径都改用它，并**拒绝保存没有 sessdata 的凭据**，
+  "空壳登录"从此过不去
+
+### Testing:
+- 新增 `tests/test_bili_login.py` 9 例：把**真实的新响应结构**钉住（老解析器在这条
+  URL 上取不到任何 cookie）、老格式的容错解析、空 URL、含 `=` 的值、凭据可用性判定
+- 门禁：ruff ✅ / mypy 31 文件无问题 ✅ / pytest **366 passed** ✅
+- 实测扫码登录成功：sessdata 34 字符 / bili_jct 32 / buvid3 46 / dedeuserid 8，
+  `check_cookie` 通过（账号 uid UID-REDACTED）
+- 旧凭据确认失效：`data/cookie_netscape.txt`（3 月）实测 -101
+
+### Notes:
+- B 站接口会变，这个项目依赖的库也可能跟不上。登录这类"协议层"的代码要有自己的解析
+  和回归测试，不能只靠库
+- `data/config.local.yaml` 是本机覆盖配置（不进 Git），把下载量限制在 1 个用于验收
