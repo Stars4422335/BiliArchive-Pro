@@ -778,7 +778,7 @@ cookie 不在响应体里了，而是**访问这个一次性 ticket 地址，从
   URL 上取不到任何 cookie）、老格式的容错解析、空 URL、含 `=` 的值、凭据可用性判定
 - 门禁：ruff ✅ / mypy 31 文件无问题 ✅ / pytest **366 passed** ✅
 - 实测扫码登录成功：sessdata 34 字符 / bili_jct 32 / buvid3 46 / dedeuserid 8，
-  `check_cookie` 通过（账号 uid UID-REDACTED）
+  `check_cookie` 通过（登录成功，sessdata / bili_jct / buvid3 / dedeuserid 四个字段齐全）
 - 旧凭据确认失效：`data/cookie_netscape.txt`（3 月）实测 -101
 
 ### Notes:

@@ -304,7 +304,7 @@ The core engine can be packaged as a directory-distributed executable. **Since v
 
 ```bash
 # tag and push; CI builds Windows, macOS, and Linux artifacts
-git tag -a v1.7.0 -m "v1.7.0" && git push origin v1.7.0
+git tag -a v1.8.0 -m "v1.8.0" && git push origin v1.8.0
 ```
 
 To package locally instead:
@@ -337,6 +337,35 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guide and the a
 ## 🧾 What's new (v1.8.0)
 
 Full details in [CHANGELOG.md](CHANGELOG.md).
+
+**Structural refactor: three god-files split apart**
+
+- `app/scheduler/scanner.py` (1038 lines -> 2.3 KB): its 23 methods now live in one mixin per source under `app/scheduler/sources/` (favourites / watch later / followings / articles / collections / history / integrity / download / forced re-download / shared primitives). `FavScanner` stays the facade: the constructor, the progress callback and the public names are unchanged, so the CLI, the panel and the tests need no changes.
+- `main.py` (737 lines -> 141): it now only parses arguments, reads the config and wires the engine up. The scan loop moved to `app/scheduler/daemon.py`, the credential check to `app/core/auth.py`, the command dispatch to `app/core/commands.py`.
+- `app/webui/service.py` (557 lines -> 130): the read paths are split by query domain into `app/webui/queries/` (settings / assets / overview / runtime).
+
+**Quality gates: ruff + mypy + a coverage floor**
+
+- New `ruff.toml` and `mypy.ini`, a lint job in CI, and `--cov-fail-under=74` on the test job - the pre-refactor baseline, so the floor can only move up.
+- **The linter immediately found a test that had been running hollow**: a helper function had been pasted into the middle of a test case, leaving its four assertions after a `return`, so they never ran. The helper moved back to the top of the file and the assertions execute again - and pass, because the production behaviour was right all along.
+
+**Docker test loop**
+
+- The Dockerfile gained `webui-test` and `backend-test` targets, the compose file a `test` profile, and `scripts/test-all.ps1` / `.sh` run everything and print one verdict table. The containers use `run --rm`, so nothing is left behind.
+- Running the suite inside the image surfaced two things the Windows run cannot: the release-safety guards read repository metadata that the runtime image deliberately does not ship, and the process-tree test mistook a zombie for a live process.
+
+**Feature completion**
+
+- **Deep pages now use a cursor**: the assets table already had an index on `(last_check DESC, bvid)`, so a cursor walks that index instead of scanning and discarding every row before it. The offset path stays for callers that have no cursor yet.
+- **The danmaku word cloud is reachable from the panel**: it has always been written next to the media as `<stem>.wordcloud.svg`, but there was no way to reach it but the filesystem.
+- **The release matrix gained a macOS Intel artefact** (`macos-13`).
+
+**QR login adapted to Bilibili's new protocol**
+
+- B站 no longer puts the cookies in the QR response; it returns a one-time ticket address and the cookies arrive in its `Set-Cookie` headers. `bilibili_api` still looks for them in the old place, so the login looked successful while producing three empty fields and the engine then failed with -101.
+- `app/core/bili_login.py` now issues the qrcode requests itself and exchanges the ticket, reading the cookies from both the cookie jar and the raw response headers; `login.py` refuses to save a credential without a sessdata, so a hollow login can no longer pass for a real one.
+
+### v1.7.1
 
 **Security fix: the article image allowlist could be bypassed**
 

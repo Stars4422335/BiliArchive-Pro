@@ -317,11 +317,11 @@ python main.py --cli --limit 3
 
 ### 6. 使用 PyInstaller 打包（可选，免 Python 环境分发）
 
-核心引擎可以打包为目录分发的可执行文件，适合分发给不想装 Python 环境的用户。**v1.6.x 起推送版本标签会自动产出三平台产物**，无需手工打包：
+核心引擎可以打包为目录分发的可执行文件，适合分发给不想装 Python 环境的用户。**v1.6.x 起推送版本标签会自动产出多平台产物**（Windows x64 / macOS Intel 与 Apple Silicon / Linux x64），无需手工打包：
 
 ```bash
-# 打出新版本并推送标签，CI 会自动构建 Windows / macOS / Linux 产物
-git tag -a v1.7.0 -m "v1.7.0" && git push origin v1.7.0
+# 打出新版本并推送标签，CI 会自动构建各平台产物
+git tag -a v1.8.0 -m "v1.8.0" && git push origin v1.8.0
 ```
 
 若需在本机打包：
@@ -359,6 +359,35 @@ cd webui && npm ci && npm run lint && npm test && npm run build
 ## 🧾 最新改进（v1.8.0）
 
 完整版本说明见 [CHANGELOG.md](CHANGELOG.md)。
+
+**结构性重构：三个上帝文件被拆开**
+
+- `app/scheduler/scanner.py`（1038 行 → 2.3 KB）：23 个方法按来源拆进 `app/scheduler/sources/` 下的十个 mixin（收藏夹 / 稍后再看 / 关注 / 图文 / 合集 / 历史 / 完整性 / 下载 / 强制重下 / 共享原语）。`FavScanner` 保留为门面，构造函数、进度回调与公开名字都不变，CLI、WebUI 与测试无需改用法。
+- `main.py`（737 行 → 141 行）：只做解析参数、读配置、装配启动；守护循环进 `app/scheduler/daemon.py`，凭据校验进 `app/core/auth.py`，命令调度进 `app/core/commands.py`。
+- `app/webui/service.py`（557 行 → 130 行）：读路径按查询域拆进 `app/webui/queries/`（settings / assets / overview / runtime）。
+
+**质量门禁：ruff + mypy + 覆盖率下限**
+
+- 新增 `ruff.toml` 与 `mypy.ini`，CI 增加 lint 作业；测试作业带 `--cov-fail-under=74`，等于重构前的基线，门槛只升不降。
+- **门禁当场抓出一个一直在空转的测试**：有个用例的函数体被辅助函数截断，四条断言落在 `return` 之后从未执行——它一直"绿着"却什么都没测。辅助函数移回文件顶部后断言恢复运行并通过，生产行为一直是对的。
+
+**Docker 测试闭环**
+
+- `Dockerfile` 新增 `webui-test` 与 `backend-test` 两个命名 target，`docker-compose.yml` 新增 `test` profile，`scripts/test-all.ps1` / `.sh` 一条命令跑完全部检查并输出统一结论表。容器用 `run --rm`，跑完即销，不留残留。
+- 在容器里跑测试暴露了本地跑不到的两件事：发布安全守卫读的是仓库元数据（运行时镜像刻意不带这些文件），以及进程树测试把僵尸进程当成活着的进程。
+
+**功能补齐**
+
+- **深分页改游标分页**：`assets` 表本就有 `(last_check DESC, bvid)` 索引，游标直接走索引，深分页不再扫描并丢弃前面的每一行；OFFSET 路径保留给还没有游标的调用。
+- **弹幕词云可以在面板里打开**：词云早就写在媒体旁边的 `<stem>.wordcloud.svg`，此前只能上磁盘找。
+- **发布矩阵新增 macOS Intel 产物**（`macos-13`）。
+
+**扫码登录适配 B 站的新协议**
+
+- B 站不再把 cookie 放在扫码响应里，而是返回一次性 ticket 地址，cookie 要从它的 `Set-Cookie` 头里取。`bilibili_api` 还在老地方找 cookie，于是登录"看起来成功"却拿到三个空字段，引擎随后报 -101。
+- `app/core/bili_login.py` 现在自己发请求、自己交换 ticket，同时从 cookie jar 与原始响应头两处读取；`login.py` 并拒绝保存没有 sessdata 的凭据，空壳登录过不去。
+
+### v1.7.1 改进
 
 **安全修复：专栏图片域名白名单可被绕过**
 
