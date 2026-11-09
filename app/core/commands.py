@@ -20,6 +20,7 @@ import re
 import uuid
 from datetime import datetime
 
+from app.core.runtime_state import update_runtime
 from app.core.secure_file import atomic_write_text
 
 
@@ -298,6 +299,71 @@ def pending_command_age_seconds(command: dict) -> float:
     return max(0.0, (_now() - parsed).total_seconds())
 
 
+async def dispatch_commands(channel, scanner, runtime, pending_scan=None) -> bool:
+    """消费一轮命令，返回是否请求退出守护循环。
+
+    所有命令都在 try/except 中执行并回执，单条失败不会中断扫描循环。
+    """
+    if channel is None:
+        return False
+    try:
+        commands = channel.take_pending()
+    except Exception as exc:
+        print(f"[!] 命令通道读取失败，本轮跳过: {exc}")
+        return False
+
+    for command in commands:
+        name = command.get("command")
+        payload = command.get("payload") or {}
+        try:
+            if name == COMMAND_TRIGGER_SCAN:
+                update_runtime(
+                    runtime,
+                    message="已收到 WebUI 触发的即时扫描指令",
+                )
+                print("[*] 已收到即时扫描指令。")
+                channel.complete(command, ok=True, result="已排入当前巡检轮次")
+                # 置位事件：若当前正处于休眠分片，则提前唤醒开始下一轮；
+                # 若正处于扫描中，本轮结束后的休眠检查会立即消费该事件。
+                if pending_scan is not None:
+                    pending_scan.set()
+                # 必须继续处理本批剩余命令：它们已被 claim，若不回执会永远
+                # 停留在 running 状态而无法被审计或重试。
+                continue
+            if name == COMMAND_REDOWNLOAD_ASSET:
+                asset_id = payload.get("asset_id")
+                if not asset_id:
+                    raise CommandError("redownload_asset 缺少 asset_id")
+                keys = scanner.request_redownload(asset_id)
+                if not keys:
+                    raise CommandError("无效的 asset_id")
+                print(f"[*] 已登记重下载请求: {asset_id}（将在下一轮巡检命中）")
+                channel.complete(
+                    command,
+                    ok=True,
+                    result=f"已登记 {asset_id}，下轮巡检命中时重下",
+                )
+                continue
+            if name == COMMAND_RESTART:
+                # 不在守护进程内自重启，避免半途中断下载；交由运维层处理。
+                update_runtime(
+                    runtime,
+                    status="restart_requested",
+                    message="已收到重启指令，请在完成当前轮次后重启核心进程",
+                )
+                print("[!] 已收到重启指令：请在当前轮次结束后重启核心进程。")
+                channel.complete(command, ok=True, result="已提示运维层重启核心进程")
+                return True
+            raise CommandError(f"不支持的命令: {name}")
+        except CommandError as exc:
+            print(f"[-] 命令执行失败: {exc}")
+            channel.complete(command, ok=False, result=str(exc))
+        except Exception as exc:
+            print(f"[-] 命令执行异常: {type(exc).__name__}: {exc}")
+            channel.complete(command, ok=False, result=f"{type(exc).__name__}: {exc}"[:200])
+    return False
+
+
 __all__ = [
     "COMMAND_REDOWNLOAD_ASSET",
     "COMMAND_RESTART",
@@ -313,6 +379,7 @@ __all__ = [
     "STATUS_RUNNING",
     "SUPPORTED_COMMANDS",
     "commands_path",
+    "dispatch_commands",
     "open_channel",
     "pending_command_age_seconds",
     "validate_command_payload",

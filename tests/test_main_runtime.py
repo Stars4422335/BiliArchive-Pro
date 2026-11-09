@@ -4,6 +4,7 @@ import pytest
 
 import main
 from app.core.parser import SyncFetchError
+from app.scheduler import daemon
 
 
 class DummyScanner:
@@ -64,10 +65,10 @@ def base_config():
 
 def test_daemon_loop_runs_component_update_when_enabled(monkeypatch):
     DummyUpdater.called = False
-    monkeypatch.setattr(main, "DatabaseManager", lambda db_path, **_: DummyDatabase())
-    monkeypatch.setattr(main, "PathManager", lambda root_path, plex_mode: object())
-    monkeypatch.setattr(main, "FavScanner", DummyScanner)
-    monkeypatch.setattr(main, "ComponentUpdater", DummyUpdater)
+    monkeypatch.setattr("app.scheduler.daemon.DatabaseManager", lambda db_path, **_: DummyDatabase())
+    monkeypatch.setattr("app.scheduler.daemon.PathManager", lambda root_path, plex_mode: object())
+    monkeypatch.setattr("app.scheduler.daemon.FavScanner", DummyScanner)
+    monkeypatch.setattr("app.scheduler.daemon.ComponentUpdater", DummyUpdater)
     monkeypatch.setattr(main.asyncio, "sleep", stop_after_first_sleep)
 
     with pytest.raises(asyncio.CancelledError):
@@ -79,10 +80,10 @@ def test_daemon_loop_runs_component_update_when_enabled(monkeypatch):
 def test_daemon_loop_applies_sdk_request_timeout(monkeypatch):
     timeouts = []
     monkeypatch.setattr(main.request_settings, "set_timeout", timeouts.append)
-    monkeypatch.setattr(main, "DatabaseManager", lambda db_path, **_: DummyDatabase())
-    monkeypatch.setattr(main, "PathManager", lambda root_path, plex_mode: object())
-    monkeypatch.setattr(main, "FavScanner", DummyScanner)
-    monkeypatch.setattr(main, "ComponentUpdater", DummyUpdater)
+    monkeypatch.setattr("app.scheduler.daemon.DatabaseManager", lambda db_path, **_: DummyDatabase())
+    monkeypatch.setattr("app.scheduler.daemon.PathManager", lambda root_path, plex_mode: object())
+    monkeypatch.setattr("app.scheduler.daemon.FavScanner", DummyScanner)
+    monkeypatch.setattr("app.scheduler.daemon.ComponentUpdater", DummyUpdater)
     monkeypatch.setattr(main.asyncio, "sleep", stop_after_first_sleep)
     config = base_config()
     config["network"] = {"request_timeout_seconds": 12}
@@ -109,13 +110,13 @@ def test_daemon_loop_uses_configured_scan_interval(monkeypatch):
         if clock["now"] >= 7:
             raise asyncio.CancelledError(seconds)
 
-    monkeypatch.setattr(main, "DatabaseManager", lambda db_path, **_: DummyDatabase())
-    monkeypatch.setattr(main, "PathManager", lambda root_path, plex_mode: object())
-    monkeypatch.setattr(main, "FavScanner", DummyScanner)
-    monkeypatch.setattr(main, "ComponentUpdater", DummyUpdater)
+    monkeypatch.setattr("app.scheduler.daemon.DatabaseManager", lambda db_path, **_: DummyDatabase())
+    monkeypatch.setattr("app.scheduler.daemon.PathManager", lambda root_path, plex_mode: object())
+    monkeypatch.setattr("app.scheduler.daemon.FavScanner", DummyScanner)
+    monkeypatch.setattr("app.scheduler.daemon.ComponentUpdater", DummyUpdater)
     monkeypatch.setattr(main.asyncio, "sleep", capture_sleep)
     # 让 _sleep_until_next_scan 使用的时钟跟随模拟时钟推进
-    monkeypatch.setattr(main, "_loop_time", lambda: clock["now"])
+    monkeypatch.setattr("app.scheduler.daemon._loop_time", lambda: clock["now"])
 
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(main.daemon_loop(base_config(), cred=object(), uid=1))
@@ -123,7 +124,7 @@ def test_daemon_loop_uses_configured_scan_interval(monkeypatch):
     # 总休眠时长仍等于 scan_interval_seconds
     assert sum(slept) == 7
     # 每一片都不超过轮询间隔，保证休眠期可被命令唤醒
-    assert all(chunk <= main.COMMAND_POLL_INTERVAL for chunk in slept)
+    assert all(chunk <= daemon.COMMAND_POLL_INTERVAL for chunk in slept)
     assert len(slept) > 1
 
 
@@ -142,9 +143,9 @@ def test_daemon_loop_continues_after_one_source_fetch_failure(monkeypatch, capsy
         {"id": 1, "name": "First"},
         {"id": 2, "name": "Second"},
     ]
-    monkeypatch.setattr(main, "DatabaseManager", lambda db_path, **_: DummyDatabase())
-    monkeypatch.setattr(main, "PathManager", lambda root_path, plex_mode: object())
-    monkeypatch.setattr(main, "FavScanner", PartiallyFailingScanner)
+    monkeypatch.setattr("app.scheduler.daemon.DatabaseManager", lambda db_path, **_: DummyDatabase())
+    monkeypatch.setattr("app.scheduler.daemon.PathManager", lambda root_path, plex_mode: object())
+    monkeypatch.setattr("app.scheduler.daemon.FavScanner", PartiallyFailingScanner)
     monkeypatch.setattr(main.asyncio, "sleep", stop_after_first_sleep)
 
     with pytest.raises(asyncio.CancelledError):
@@ -165,10 +166,10 @@ def test_daemon_loop_closes_database_when_cancelled(monkeypatch):
         databases.append(database)
         return database
 
-    monkeypatch.setattr(main, "DatabaseManager", create_database)
-    monkeypatch.setattr(main, "PathManager", lambda root_path, plex_mode: object())
-    monkeypatch.setattr(main, "FavScanner", DummyScanner)
-    monkeypatch.setattr(main, "ComponentUpdater", DummyUpdater)
+    monkeypatch.setattr("app.scheduler.daemon.DatabaseManager", create_database)
+    monkeypatch.setattr("app.scheduler.daemon.PathManager", lambda root_path, plex_mode: object())
+    monkeypatch.setattr("app.scheduler.daemon.FavScanner", DummyScanner)
+    monkeypatch.setattr("app.scheduler.daemon.ComponentUpdater", DummyUpdater)
     monkeypatch.setattr(main.asyncio, "sleep", stop_after_first_sleep)
 
     with pytest.raises(asyncio.CancelledError):
@@ -190,9 +191,9 @@ def test_daemon_loop_passes_collection_owner_mid(monkeypatch):
     config["sync_collections"] = [
         {"id": 88, "mid": 77, "name": "Test collection"}
     ]
-    monkeypatch.setattr(main, "DatabaseManager", lambda db_path, **_: DummyDatabase())
-    monkeypatch.setattr(main, "PathManager", lambda root_path, plex_mode: object())
-    monkeypatch.setattr(main, "FavScanner", RecordingCollectionScanner)
+    monkeypatch.setattr("app.scheduler.daemon.DatabaseManager", lambda db_path, **_: DummyDatabase())
+    monkeypatch.setattr("app.scheduler.daemon.PathManager", lambda root_path, plex_mode: object())
+    monkeypatch.setattr("app.scheduler.daemon.FavScanner", RecordingCollectionScanner)
     monkeypatch.setattr(main.asyncio, "sleep", stop_after_first_sleep)
 
     with pytest.raises(asyncio.CancelledError):
@@ -205,9 +206,9 @@ def test_daemon_loop_marks_collection_without_mid_incomplete(monkeypatch, capsys
     config = base_config()
     config["system"]["check_update_on_start"] = False
     config["sync_collections"] = [{"id": 88, "name": "Missing owner"}]
-    monkeypatch.setattr(main, "DatabaseManager", lambda db_path, **_: DummyDatabase())
-    monkeypatch.setattr(main, "PathManager", lambda root_path, plex_mode: object())
-    monkeypatch.setattr(main, "FavScanner", DummyScanner)
+    monkeypatch.setattr("app.scheduler.daemon.DatabaseManager", lambda db_path, **_: DummyDatabase())
+    monkeypatch.setattr("app.scheduler.daemon.PathManager", lambda root_path, plex_mode: object())
+    monkeypatch.setattr("app.scheduler.daemon.FavScanner", DummyScanner)
     monkeypatch.setattr(main.asyncio, "sleep", stop_after_first_sleep)
 
     with pytest.raises(asyncio.CancelledError):

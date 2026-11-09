@@ -10,6 +10,16 @@ def _now_text():
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
+def update_runtime(runtime, **changes):
+    """Apply changes to a runtime writer, tolerating a missing writer.
+
+    The daemon runs without a runtime file when the database lives in
+    memory, so every call site has to be able to skip the write.
+    """
+    if runtime is not None:
+        runtime.update(**changes)
+
+
 def runtime_state_path(config):
     db_path = os.fspath(config.get("system", {}).get("db_path") or "")
     if not db_path or db_path == ":memory:":

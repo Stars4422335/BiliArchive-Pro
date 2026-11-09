@@ -11,6 +11,7 @@ import asyncio
 import pytest
 
 from app.core.parser import BiliParser, SyncFetchError
+from app.scheduler import daemon
 from app.scheduler.scanner import FavScanner
 
 
@@ -341,7 +342,7 @@ def test_main_gates_article_scan_on_config():
 
     import main
 
-    source = inspect.getsource(main._run_scan_loop)
+    source = inspect.getsource(daemon._run_scan_loop)
     assert "article_types" in source
     assert "scan_following_articles" in source
     assert "'article', 'all'" in source
