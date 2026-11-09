@@ -221,7 +221,9 @@ def test_summary_failure_does_not_raise(tmp_path, monkeypatch):
     def boom(*args, **kwargs):
         raise RuntimeError("摘要器内部炸了")
 
-    monkeypatch.setattr("app.scheduler.scanner.LocalSummarizer", boom)
+    # LocalSummarizer moved to the download mixin when the scanner was split;
+    # the name has to be patched where it is now looked up.
+    monkeypatch.setattr("app.scheduler.sources.download.LocalSummarizer", boom)
     item = {"intro": ""}
 
     assert scanner._attach_outline(item, str(tmp_path), "video") is None
