@@ -70,8 +70,8 @@ def test_dockerfile_uses_explicit_runtime_copy_list():
 
 @needs_repo_metadata
 def test_release_metadata_is_consistent():
-    expected_version = "1.8.1"
-    expected_date = "2026-11-09"
+    expected_version = "1.9.0"
+    expected_date = "2026-11-10"
     dockerfile = (PROJECT_ROOT / "Dockerfile").read_text(encoding="utf-8")
     readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
     changelog = (PROJECT_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")

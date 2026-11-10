@@ -860,3 +860,49 @@ TypeError，3 个因 `<art>` 元素不存在断言失败），再写实现。
 - `<art>` 写相对路径而非本机绝对路径有两个理由：NFO 换机器换目录后依然有效；
   媒体库里不会出现本机目录结构。
 - v1.8.0 的 Release 保持原样未动，`<art>` 作为补丁版本 v1.8.1 单独发布。
+
+## 2026-11-10 - Task: v1.9.0 NAS Docker 离线包 + WebUI 容器修复
+
+### What was done:
+- WebUI 容器崩溃修复（纯 Docker 场景面板从未能启动的根因）：
+  * app/webui/app.py create_app 新增 public_bind 参数，token 强制校验从
+    is_loopback_host(host) 改为按 public_bind 判定（监听地址≠暴露范围）
+  * web.py 新增 --public-bind（env BILIARCHIVE_WEB_PUBLIC_BIND）
+  * docker-compose webui 服务：restart: unless-stopped、提升为默认服务（去 profiles）、
+    端口绑定与校验共用 BILIARCHIVE_WEB_BIND 变量
+- Docker 离线包产线：
+  * release.yml 新增 docker-image job（amd64=ubuntu-latest / arm64=ubuntu-24.04-arm
+    原生 runner，buildx 构建 → docker save 保留 RepoTag），publish needs 链更新
+  * scripts/pack-docker-offline.sh：组装镜像 tar + 离线 compose + .env.example +
+    install.sh + NAS安装指南.md + SHA256SUMS；compose 的 image 行按 tar 内
+    manifest.json 的实际 RepoTag 动态替换（本机/CI tag 均适配）
+  * scripts/offline/docker-compose.yml：无 build 段、相对路径挂载（./data ./downloads），
+    飞牛/极空间 Compose 均支持
+  * scripts/offline/NAS安装指南.md：飞牛篇（纯 GUI）+ 极空间篇（SSH docker load，
+    需 2024-10+ 固件）+ 通用 docker 环境篇 + 持久化/登录/WebUI 安全说明
+  * Dockerfile 最终 stage 加 EXPOSE 8000
+- 文档：README.md/README.en.md Docker 章节重写（方式二=NAS 离线包/方式三=源码 compose）；
+  TODO 扩展功能分节标题改"已实现"；CHANGELOG 1.9.0 段；版本四处同步至 1.9.0
+  （app/__init__.py、webui/package.json、Dockerfile 两处、守卫测试）
+
+### Testing:
+- 全量 373 passed（含 2 个新 public_bind 测试：免 token 本机 / 非 loopback 拒绝）
+- 本机 Docker 端到端：
+  * 镜像构建 → 单容器验证 --host 0.0.0.0 --public-bind 127.0.0.1 免 token 启动
+    （修复前此场景即崩溃），/api/health auth_required=false，前端 HTML 正常
+  * 浏览器 GUI 验证：管理面板四视图渲染正常，空库显示"数据库不可读+重试"空态
+    （预期行为），验证后已关闭全部测试页面
+  * compose 全套 up → 健康检查 → runtime.json 落盘 data/ → down 后数据保留
+  * 离线包演练：pack 脚本产出 tar.gz → 解包 7 文件齐全 → install.sh → docker load
+    （tag 保留）→ compose up → 健康检查 → down；image tag 动态替换用
+    v1.9.0-amd64 形式 tag 专项验证通过
+- 演练产物已全部清理（临时目录/测试容器/测试镜像）
+
+### Notes:
+- CI 的 arm64 构建依赖 ubuntu-24.04-arm runner（GitHub 免费提供）；若 runner 不可用
+  会 fail-fast 可见，降级方案是 buildx QEMU（未内置）
+- 极空间 GUI 无镜像导入入口是基于调研的结论（2024-10 后有 SSH），指南已注明固件要求
+- WebUI 扫码登录（MiniMax 提案 C）未包含，为后续版本工作；当前登录仍是宿主机
+  login.py → cookie.json 放入 data/ 挂载目录
+- 下一步：commit → push → tag v1.9.0 → CI 产出全部资产（源码 zip + 4 平台 PyInstaller
+  + 2 架构离线包）→ Release 自动发布

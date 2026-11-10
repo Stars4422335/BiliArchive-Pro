@@ -1,0 +1,58 @@
+# BiliArchive-Pro NAS 离线安装专用 Compose
+#
+# 与仓库版 docker-compose.yml 的差异：
+# - 无 build 段：镜像来自本包的 tar（docker load / GUI 导入）
+# - WebUI 是默认服务（无 profiles），随核心一起启动
+# - 挂载全部使用相对路径（相对本文件所在目录），在飞牛 / 极空间的
+#   Compose 中都受支持，避免写死平台特定路径
+#
+# 持久化目录（务必保留挂载，删除容器不影响这些目录里的数据）：
+#   ./data       → /app/data       数据库、登录凭证、运行状态、本地覆盖配置
+#   ./downloads  → /app/downloads  媒体库输出
+#   ./config.yaml → /app/config.yaml（只读）公共配置模板
+#
+# 使用前把 .env.example 复制为 .env 并按需修改（WebUI 绑定/端口/token）。
+
+services:
+  biliarchive:
+    image: biliarchive-pro:local
+    container_name: biliarchive-pro
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+      - ./downloads:/app/downloads
+      - ./config.yaml:/app/config.yaml:ro
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - BILIARCHIVE_LOCAL_CONFIG_PATH=/app/data/config.local.yaml
+
+  biliarchive-web:
+    image: biliarchive-pro:local
+    container_name: biliarchive-pro-web
+    restart: unless-stopped
+    depends_on:
+      - biliarchive
+    command:
+      [
+        "python",
+        "web.py",
+        "--host",
+        "0.0.0.0",
+        "--public-bind",
+        "${BILIARCHIVE_WEB_BIND:-127.0.0.1}",
+        "--port",
+        "8000",
+      ]
+    ports:
+      - "${BILIARCHIVE_WEB_BIND:-127.0.0.1}:${BILIARCHIVE_WEB_PORT:-8000}:8000"
+    volumes:
+      - ./data:/app/data
+      - ./downloads:/app/downloads:ro
+      - ./config.yaml:/app/config.yaml:ro
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - BILIARCHIVE_LOCAL_CONFIG_PATH=/app/data/config.local.yaml
+      - BILIARCHIVE_WEB_TOKEN=${BILIARCHIVE_WEB_TOKEN:-}
+      # 与上方端口绑定同一个变量：默认只暴露到宿主机 127.0.0.1（免 token）。
+      # 改为 0.0.0.0 时必须设置 BILIARCHIVE_WEB_TOKEN，否则启动即拒绝。
+      - BILIARCHIVE_WEB_PUBLIC_BIND=${BILIARCHIVE_WEB_BIND:-127.0.0.1}

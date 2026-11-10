@@ -15,11 +15,20 @@ services:
   biliarchive-web:
     build: .
     container_name: biliarchive-pro-web
-    profiles: ["webui"]
-    restart: "no"
-    command: ["python", "web.py", "--host", "0.0.0.0", "--port", "8000"]
+    restart: unless-stopped
+    command:
+      [
+        "python",
+        "web.py",
+        "--host",
+        "0.0.0.0",
+        "--public-bind",
+        "${BILIARCHIVE_WEB_BIND:-127.0.0.1}",
+        "--port",
+        "8000",
+      ]
     ports:
-      - "127.0.0.1:${BILIARCHIVE_WEB_PORT:-8000}:8000"
+      - "${BILIARCHIVE_WEB_BIND:-127.0.0.1}:${BILIARCHIVE_WEB_PORT:-8000}:8000"
     volumes:
       - ./data:/app/data
       - ./downloads:/app/downloads:ro
@@ -28,6 +37,10 @@ services:
       - TZ=Asia/Shanghai
       - BILIARCHIVE_LOCAL_CONFIG_PATH=/app/data/config.local.yaml
       - BILIARCHIVE_WEB_TOKEN=${BILIARCHIVE_WEB_TOKEN:-}
+      # --public-bind 与上方端口绑定使用同一个变量，保证"实际暴露范围"与 token
+      # 校验一致：默认只发布到宿主机 127.0.0.1（免 token）；改为 0.0.0.0 暴露
+      # 局域网/公网时必须同时设置 BILIARCHIVE_WEB_TOKEN，否则启动即拒绝。
+      - BILIARCHIVE_WEB_PUBLIC_BIND=${BILIARCHIVE_WEB_BIND:-127.0.0.1}
 
   # ---------- test profile ----------
   # `docker compose --profile test run --rm backend-test`

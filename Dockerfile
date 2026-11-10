@@ -58,13 +58,13 @@ FROM python:3.11-slim
 ARG DEBIAN_MIRROR=https://deb.debian.org
 
 LABEL org.opencontainers.image.title="BiliArchive-Pro" \
-      org.opencontainers.image.version="1.8.1" \
+      org.opencontainers.image.version="1.9.0" \
       org.opencontainers.image.source="https://github.com/Stars4422335/BiliArchive-Pro" \
       org.opencontainers.image.licenses="GPL-3.0-only"
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
-    BILIARCHIVE_VERSION=1.8.1
+    BILIARCHIVE_VERSION=1.9.0
 
 WORKDIR /app
 
@@ -90,5 +90,8 @@ COPY --from=webui-builder /webui/dist ./webui/dist
 RUN mkdir -p /app/data /app/downloads /app/bin
 
 VOLUME ["/app/data", "/app/downloads", "/app/bin"]
+
+# WebUI 服务端口（compose 中由 biliarchive-web 映射；核心引擎容器不监听端口）
+EXPOSE 8000
 
 CMD ["python", "main.py", "--cli"]

@@ -2,6 +2,20 @@
 
 本文件记录正式发布版本的用户可见变更。版本号遵循语义化版本格式。
 
+## [1.9.0] - 2026-11-10
+
+### NAS Docker 离线安装包
+
+- 新增 Release 资产 `BiliArchive-Pro-docker-amd64.tar.gz` 与 `BiliArchive-Pro-docker-arm64.tar.gz`：内含 Docker 镜像 tar、离线专用 compose、`.env.example`、可选 `install.sh` 与《NAS安装指南》，面向极空间 / 飞牛等无法在线拉取镜像的环境。
+- 指南分平台给出图形界面操作步骤：飞牛全程 GUI（本地镜像导入 + Compose 上传）；极空间需 2024-10+ 固件开启 SSH 后 `docker load`，再走图形化 Compose。离线 compose 全部使用相对路径挂载，避免平台路径差异。
+- 发布流水线新增 `docker-image` 作业：amd64 与 arm64 原生 runner 各自构建，`docker save` 保留完整镜像名，导入后镜像不丢标签。
+
+### WebUI 容器修复
+
+- 修复容器内 WebUI 启动即崩溃的问题：原先把「监听地址」同时当作「暴露范围」，容器必须绑定 `0.0.0.0`（非 loopback）就被强制要求 token，而默认无 token 来源，导致纯 Docker 场景下面板从未能启动。
+- 引入 `--public-bind`（env `BILIARCHIVE_WEB_PUBLIC_BIND`）单独描述实际暴露范围；token 强制校验改按该值判定。监听 `0.0.0.0` + 暴露 `127.0.0.1` 的组合现在允许免 token 运行。
+- compose 的 webui 服务改为 `restart: unless-stopped` 并提升为默认服务；端口绑定与校验共用 `BILIARCHIVE_WEB_BIND` 变量，不会出现「端口改了但校验没改」的错配。
+
 ## [1.8.1] - 2026-11-09
 
 ### NFO 里写明封面位置
@@ -305,7 +319,8 @@
 - 如果 `data/cookie.json` 曾被上传、打包或共享，应重新登录，使旧凭据失效。
 - 本版本不提供 EXE 或 App；跨平台独立可执行文件仍属于后续阶段。
 
-[Unreleased]: https://github.com/Stars4422335/BiliArchive-Pro/compare/v1.8.1...HEAD
+[Unreleased]: https://github.com/Stars4422335/BiliArchive-Pro/compare/v1.9.0...HEAD
+[1.9.0]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.0
 [1.8.1]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.8.1
 [1.8.0]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.8.0
 [1.7.1]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.7.1

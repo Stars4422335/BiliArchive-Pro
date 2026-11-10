@@ -311,9 +311,58 @@ jobs:
             dist/BiliArchive-Pro-${{ needs.source.outputs.tag }}-${{ matrix.label }}.*
           draft: true
 
+  docker-image:
+    name: Docker image (NAS offline package)
+    needs: source
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            platform: linux/amd64
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            arch: arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          tags: biliarchive-pro:${{ needs.source.outputs.tag }}-${{ matrix.arch }}
+          outputs: type=docker,dest=biliarchive-pro-${{ needs.source.outputs.tag }}-${{ matrix.arch }}.tar
+
+      - name: Pack NAS offline bundle
+        run: |
+          bash scripts/pack-docker-offline.sh \
+            "biliarchive-pro-${{ needs.source.outputs.tag }}-${{ matrix.arch }}.tar" \
+            "${{ needs.source.outputs.tag }}" \
+            "${{ matrix.arch }}" \
+            dist/offline
+
+      - name: Upload to draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.source.outputs.tag }}
+          files: |
+            dist/offline/BiliArchive-Pro-docker-${{ matrix.arch }}.tar.gz
+            dist/offline/BiliArchive-Pro-docker-${{ matrix.arch }}.tar.gz.sha256
+          draft: true
+
   publish:
     name: Publish release
-    needs: build
+    needs:
+      - build
+      - docker-image
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

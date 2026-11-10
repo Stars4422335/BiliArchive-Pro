@@ -24,6 +24,7 @@ def create_app(
     project_root: os.PathLike[str] | str | None = None,
     *,
     host: str = "127.0.0.1",
+    public_bind: str | None = None,
     token: str | None = None,
     config_path: os.PathLike[str] | str | None = None,
     db_path: os.PathLike[str] | str | None = None,
@@ -31,13 +32,21 @@ def create_app(
 ) -> FastAPI:
     """Create the API and optionally serve the built frontend.
 
-    A token is mandatory before binding to a non-loopback address. When a
-    token is configured, only ``/api/health`` remains unauthenticated.
+    ``host`` is the address uvicorn listens on; ``public_bind`` describes
+    where the service is actually reachable from. A token is mandatory only
+    when ``public_bind`` is a non-loopback address — this distinction is what
+    lets the container listen on ``0.0.0.0`` (a technical requirement for
+    Docker port mapping) while still publishing to the host loopback only.
+    When a token is configured, only ``/api/health`` remains unauthenticated.
     """
     token = token.strip() if isinstance(token, str) else token
     token = token or None
-    if not is_loopback_host(host) and not token:
-        raise ValueError("非 loopback 地址必须配置 WebUI token")
+    effective_bind = public_bind if public_bind is not None else host
+    if not is_loopback_host(effective_bind) and not token:
+        raise ValueError(
+            "非 loopback 地址必须配置 WebUI token"
+            "（--public-bind 描述实际暴露范围，--host 仅是监听地址）"
+        )
     root = Path(project_root or os.getcwd()).resolve()
     resolved_config = Path(config_path or root / "config.yaml").resolve()
     resolved_static = Path(static_dir or root / "webui" / "dist").resolve()

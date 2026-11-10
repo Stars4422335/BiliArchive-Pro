@@ -222,6 +222,33 @@ def test_non_loopback_requires_token_and_token_protects_api(webui_fixture):
     ).status_code == 200
 
 
+def test_container_listen_0_0_0_0_with_loopback_public_bind_needs_no_token(
+    webui_fixture,
+):
+    """容器场景：监听 0.0.0.0 但实际暴露范围是宿主 loopback，免 token 可用。"""
+    _, root, config_path = webui_fixture
+    app = create_app(
+        project_root=root,
+        config_path=config_path,
+        db_path=root / "archive.db",
+        host="0.0.0.0",
+        public_bind="127.0.0.1",
+    )
+    client = TestClient(app)
+    assert client.get("/api/health").json()["auth_required"] is False
+
+
+def test_non_loopback_public_bind_requires_token(webui_fixture):
+    _, root, config_path = webui_fixture
+    with pytest.raises(ValueError, match="public-bind"):
+        create_app(
+            project_root=root,
+            config_path=config_path,
+            host="0.0.0.0",
+            public_bind="0.0.0.0",
+        )
+
+
 def test_read_only_database_does_not_create_missing_file(tmp_path):
     path = tmp_path / "missing.db"
     with pytest.raises(sqlite3.OperationalError):

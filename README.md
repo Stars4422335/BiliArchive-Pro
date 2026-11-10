@@ -3,7 +3,7 @@
 > **带本地 WebUI 的 Bilibili 个人数字资产备份、同步与媒体库整理工具**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Release: v1.8.1](https://img.shields.io/badge/release-v1.8.1-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.8.1)
+[![Release: v1.9.0](https://img.shields.io/badge/release-v1.8.1-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.0)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 
 **简体中文** | [English](README.en.md)
@@ -51,7 +51,19 @@ source venv/bin/activate  # Windows 用户使用 venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 方式二：Docker / Docker Compose 部署 (推荐 NAS/服务器使用)
+### 方式二：NAS Docker 离线包 (推荐极空间 / 飞牛等 NAS 使用)
+
+从 [Releases](https://github.com/Stars4422335/BiliArchive-Pro/releases) 下载对应架构的 `BiliArchive-Pro-docker-<架构>.tar.gz`（amd64 对应 x86 NAS，arm64 对应 ARM NAS），解压后按包内《NAS安装指南.md》操作：
+
+- **飞牛 fnOS**：全程图形界面——Docker → 本地镜像 → 从 NAS 文件添加（选 tar）→ Compose → 上传包内 `docker-compose.yml`。
+- **极空间 ZOS**（需 2024-10+ 固件）：开启 SSH → `docker load -i biliarchive-pro-*.tar` → Docker 管理器 Compose 标签页粘贴 yml。
+- 持久化目录全部使用相对路径挂载（`./data`、`./downloads`），数据与媒体库保留在 NAS 磁盘上，升级/重建容器不丢数据。
+
+**登录（当前版本）**：先在一台装有 Python 的电脑上执行 `python login.py` 扫码，把生成的 `data/cookie.json` 放入 NAS 的 `data` 挂载目录后重启容器。WebUI 内扫码登录在后续版本提供。
+
+**WebUI 访问**：默认 `BILIARCHIVE_WEB_BIND=127.0.0.1`，仅限 NAS 本机免 token 访问；要局域网访问把它改为 `0.0.0.0` 并**必须**同时设置 `BILIARCHIVE_WEB_TOKEN`，否则面板容器会拒绝启动（安全边界，设计如此）。
+
+### 方式三：Docker / Docker Compose 源码部署 (推荐服务器使用)
 
 Docker 部署内置了 FFmpeg 等所有运行环境，且彻底隔离，是最稳定省心的长期挂机方式。
 
@@ -76,23 +88,19 @@ docker compose up -d biliarchive
 ```
 启动后，容器会自动接管所有后台下载任务。你可以通过 `docker compose logs -f biliarchive` 查看实时运行日志。
 
-**4. 可选：启动 WebUI**
+**4. 启动 WebUI**
 
-WebUI 在 Docker 中使用独立服务，并强制要求 Bearer Token。下面的端口只绑定宿主机 `127.0.0.1`：
+WebUI 是 compose 中的默认服务，随 `docker compose up -d` 一起启动。默认 `BILIARCHIVE_WEB_BIND=127.0.0.1`：端口只发布到宿主机本机，**免 token** 直接访问 `http://127.0.0.1:8000`。
+
+若要从其他电脑访问，把 `.env` 中 `BILIARCHIVE_WEB_BIND` 改为 `0.0.0.0`，并设置 token（否则面板容器会拒绝启动）：
 
 ```bash
-export BILIARCHIVE_WEB_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
-docker compose --profile webui up -d
+echo "BILIARCHIVE_WEB_BIND=0.0.0.0" >> .env
+echo "BILIARCHIVE_WEB_TOKEN=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')" >> .env
+docker compose up -d biliarchive-web
 ```
 
-PowerShell 可使用：
-
-```powershell
-$env:BILIARCHIVE_WEB_TOKEN = python -c "import secrets; print(secrets.token_urlsafe(32))"
-docker compose --profile webui up -d
-```
-
-打开 `http://127.0.0.1:8000` 并输入刚生成的 Token。若需要从其他电脑访问，优先使用 SSH 隧道或带 TLS 的反向代理，不要直接把未加密端口暴露到公网。
+打开 `http://<主机IP>:8000` 并输入 Token。安全规则只看实际暴露范围（`--public-bind`）：暴露到非 loopback 必须配 token；优先使用 SSH 隧道或带 TLS 的反向代理，不要直接把未加密端口暴露到公网。
 
 > **持久化说明**：Docker 会将 `data/`（数据库、凭证、运行状态和 `config.local.yaml`）、`downloads/`（视频与专栏库）、`bin/`（组件工具）映射到宿主机；`config.yaml` 只读挂载。WebUI 保存设置后需要重启 `biliarchive` 核心服务才会生效。
 
@@ -356,7 +364,22 @@ cd webui && npm ci && npm run lint && npm test && npm run build
 
 ---
 
-## 🧾 最新改进（v1.8.1）
+## 🧾 最新改进（v1.9.0）
+
+完整版本说明见 [CHANGELOG.md](CHANGELOG.md)。
+
+**NAS Docker 离线安装包**
+
+- Release 新增 amd64 / arm64 双架构离线包：镜像 tar + 离线专用 compose + 《NAS安装指南》，覆盖极空间（SSH docker load + 图形化 Compose）与飞牛（纯 GUI 导入 + Compose 上传）两类安装路径。
+- 离线 compose 使用相对路径挂载（`./data`、`./downloads`），数据与媒体库持久化在 NAS 磁盘，升级/重建容器不丢数据。
+
+**WebUI 容器修复**
+
+- 修复纯 Docker 场景下面板启动即崩溃的问题（`0.0.0.0` 监听被当作公网暴露而强制要求 token）。
+- 新增 `--public-bind` 区分「监听地址」与「实际暴露范围」：默认暴露宿主机本机免 token；暴露局域网/公网必须配 token，配置不会错配。
+- compose webui 服务改为默认启动 + `restart: unless-stopped`。
+
+### v1.8.1 改进
 
 完整版本说明见 [CHANGELOG.md](CHANGELOG.md)。
 
@@ -554,7 +577,7 @@ python main.py --cli
 - [x] **完整性巡检**：`verify_integrity` 三档（off/light/full）抽样校验已归档媒体，抓"存在但损坏"的静默失败，只标记不删除。
 - [x] **跨平台打包**：推送版本标签由 CI 自动产出 Windows / macOS / Linux 三平台免 Python 环境分发包（PyInstaller 构建 + 冒烟验证 + 完整性检查 + SHA256）。
 
-### 🟡 扩展功能 (规划中/开发中)
+### 🟢 扩展功能 (已实现)
 - [x] **弹幕词云**：`wordcloud.enabled` 基于同一份 `.danmaku.xml` 生成 `.wordcloud.svg` 侧车，零新依赖、纯本地计算，失败不影响下载。
 - [x] **内容摘要**：`summary.enabled` 从字幕抽取式生成摘要写入 NFO `<outline>`，纯本地计算、字幕不外发；`mode: llm` 预留但明确拒绝（涉及隐私）。
 - [x] **性能治理**：面向真实查询的索引 + WebUI 排序去表达式化；`db_wal` 可选开启 WAL。2 万资产实测 WebUI 列表 9.5ms→0.11ms、计数 8.1ms→0.7ms。

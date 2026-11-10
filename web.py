@@ -14,7 +14,15 @@ def parse_args():
     parser.add_argument(
         "--host",
         default=os.environ.get("BILIARCHIVE_WEB_HOST", "127.0.0.1"),
-        help="监听地址，默认 127.0.0.1",
+        help="监听地址，默认 127.0.0.1；容器内通常需 0.0.0.0 供端口映射",
+    )
+    parser.add_argument(
+        "--public-bind",
+        default=os.environ.get("BILIARCHIVE_WEB_PUBLIC_BIND"),
+        help=(
+            "服务实际暴露给谁的地址；未提供时回落到 --host。"
+            "非 loopback 暴露必须配置 BILIARCHIVE_WEB_TOKEN"
+        ),
     )
     parser.add_argument(
         "--port",
@@ -39,6 +47,7 @@ def main():
     app = create_app(
         project_root=PROJECT_ROOT,
         host=args.host,
+        public_bind=args.public_bind,
         token=token,
         config_path=args.config,
     )

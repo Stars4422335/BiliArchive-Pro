@@ -3,7 +3,7 @@
 > **Back up, sync, and organize your personal Bilibili assets — with a local WebUI**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Release: v1.8.1](https://img.shields.io/badge/release-v1.8.1-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.8.1)
+[![Release: v1.9.0](https://img.shields.io/badge/release-v1.8.1-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.0)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 
 [简体中文](README.md) | **English**
@@ -51,7 +51,19 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Option 2: Docker / Docker Compose (recommended for NAS and servers)
+### Option 2: NAS offline Docker bundle (recommended for Zidoo-like / fnOS NAS)
+
+Download `BiliArchive-Pro-docker-<arch>.tar.gz` for your architecture from the [Releases](https://github.com/Stars4422335/BiliArchive-Pro/releases) page (amd64 for x86 NAS, arm64 for ARM NAS), then follow the bundled `NAS安装指南.md`:
+
+- **fnOS**: fully graphical — Docker → Local images → Add from NAS file (pick the tar) → Compose → upload the bundled `docker-compose.yml`.
+- **ZOS (ZSpace)**: firmware 2024-10+ — enable SSH → `docker load -i biliarchive-pro-*.tar` → paste the compose file in the Docker Compose tab.
+- Mounts use relative paths (`./data`, `./downloads`), so the media library and database persist on the NAS disk across container rebuilds.
+
+**Login (current version)**: run `python login.py` on a PC with Python, then copy the generated `data/cookie.json` into the NAS `data` mount and restart the containers. In-panel QR login ships in a later release.
+
+**WebUI access**: the default `BILIARCHIVE_WEB_BIND=127.0.0.1` keeps the panel on the NAS itself, token-free. To reach it from your LAN, change the bind to `0.0.0.0` and **set `BILIARCHIVE_WEB_TOKEN`** — otherwise the panel container refuses to start (by design).
+
+### Option 3: Docker / Docker Compose from source (recommended for servers)
 
 The Docker image bundles FFmpeg and the Python runtime, fully isolated — the most stable, hands-off way to keep it running.
 
@@ -77,23 +89,19 @@ docker compose up -d biliarchive
 ```
 Follow along with `docker compose logs -f biliarchive`.
 
-**4. Optional: start the WebUI**
+**4. Start the WebUI**
 
-The WebUI runs as a separate service and **requires** a bearer token. The published port binds to host `127.0.0.1` only:
+The WebUI is a default compose service and starts together with the core. With the default `BILIARCHIVE_WEB_BIND=127.0.0.1` the published port stays on the host loopback — token-free at `http://127.0.0.1:8000`.
+
+To reach it from other machines, switch the bind to `0.0.0.0` and set a token (the panel container refuses to start otherwise):
 
 ```bash
-export BILIARCHIVE_WEB_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
-docker compose --profile webui up -d
+echo "BILIARCHIVE_WEB_BIND=0.0.0.0" >> .env
+echo "BILIARCHIVE_WEB_TOKEN=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')" >> .env
+docker compose up -d biliarchive-web
 ```
 
-PowerShell:
-
-```powershell
-$env:BILIARCHIVE_WEB_TOKEN = python -c "import secrets; print(secrets.token_urlsafe(32))"
-docker compose --profile webui up -d
-```
-
-Open `http://127.0.0.1:8000` and enter the token. To reach it from another machine, prefer an SSH tunnel or a TLS-terminating reverse proxy — do not expose the unencrypted port to the internet.
+Open `http://<host-ip>:8000` and enter the token. The security rule follows the actual exposure (`--public-bind`): non-loopback exposure requires a token. Prefer an SSH tunnel or a TLS-terminating reverse proxy — do not expose the unencrypted port to the internet.
 
 > **Persistence**: Docker maps `data/` (database, credentials, runtime state, `config.local.yaml`), `downloads/` (videos and articles), and `bin/` (component tools) to the host; `config.yaml` is mounted read-only. After saving settings in the WebUI, restart the `biliarchive` service for them to take effect.
 
@@ -334,7 +342,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guide and the a
 
 ---
 
-## 🧾 What's new (v1.8.1)
+## 🧾 What's new (v1.9.0)
 
 Full details in [CHANGELOG.md](CHANGELOG.md).
 
