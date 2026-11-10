@@ -3,7 +3,7 @@
 > **带本地 WebUI 的 Bilibili 个人数字资产备份、同步与媒体库整理工具**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Release: v1.9.0](https://img.shields.io/badge/release-v1.8.1-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.0)
+[![Release: v1.9.1](https://img.shields.io/badge/release-v1.9.1-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.1)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 
 **简体中文** | [English](README.en.md)
@@ -53,15 +53,22 @@ pip install -r requirements.txt
 
 ### 方式二：NAS Docker 离线包 (推荐极空间 / 飞牛等 NAS 使用)
 
-从 [Releases](https://github.com/Stars4422335/BiliArchive-Pro/releases) 下载对应架构的 `BiliArchive-Pro-docker-<架构>.tar.gz`（amd64 对应 x86 NAS，arm64 对应 ARM NAS），解压后按包内《NAS安装指南.md》操作：
+从 [Releases](https://github.com/Stars4422335/BiliArchive-Pro/releases) 下载对应架构的 `BiliArchive-Pro-docker-<架构>.tar.gz`（amd64 对应 x86 NAS，arm64 对应 ARM NAS）与同名 `.sha256`，本地校验通过后解压。
 
-- **飞牛 fnOS**：全程图形界面——Docker → 本地镜像 → 从 NAS 文件添加（选 tar）→ Compose → 上传包内 `docker-compose.yml`。
-- **极空间 ZOS**（需 2024-10+ 固件）：开启 SSH → `docker load -i biliarchive-pro-*.tar` → Docker 管理器 Compose 标签页粘贴 yml。
-- 持久化目录全部使用相对路径挂载（`./data`、`./downloads`），数据与媒体库保留在 NAS 磁盘上，升级/重建容器不丢数据。
+**飞牛 fnOS**：全程图形界面——Docker → 本地镜像 → 从 NAS 文件添加（选 tar）→ Compose → 上传包内 `docker-compose.yml`。
 
-**登录（当前版本）**：先在一台装有 Python 的电脑上执行 `python login.py` 扫码，把生成的 `data/cookie.json` 放入 NAS 的 `data` 挂载目录后重启容器。WebUI 内扫码登录在后续版本提供。
+**极空间 ZOS（实测流程，全程不需要 SSH）**：
 
-**WebUI 访问**：默认 `BILIARCHIVE_WEB_BIND=127.0.0.1`，仅限 NAS 本机免 token 访问；要局域网访问把它改为 `0.0.0.0` 并**必须**同时设置 `BILIARCHIVE_WEB_TOKEN`，否则面板容器会拒绝启动（安全边界，设计如此）。
+1. 把镜像文件 `biliarchive-pro-<版本>-<架构>.tar` 上传到极空间个人空间（如 `我的文件/BiliArchive-Pro/`）。
+2. 极空间客户端 → Docker → 镜像 → 导入本地镜像，选择该 tar（远程链路导入大镜像可能超时，在 NAS 所在局域网内操作最快）。
+3. Compose → 创建项目，粘贴包内 `docker-compose.yml`，把其中的相对路径挂载改为个人空间绝对路径，例如：
+   - `我的文件/BiliArchive-Pro/config` → `/app/data`
+   - `我的文件/BiliArchive-Pro/Download` → `/app/downloads`
+4. 面板容器启动后，在 Docker 应用列表点「打开」进入 WebUI；**首启密码在核心容器日志里**（自动生成，登录后强制修改）。
+
+**账号登录（当前版本）**：先在一台装有 Python 的电脑上执行 `python login.py --qr` 扫码，把生成的 `data/cookie.json` 放入 NAS 的 `data` 挂载目录，核心引擎下一轮自动读取。WebUI 内扫码登录在后续版本提供。
+
+**WebUI 访问安全**：默认 `BILIARCHIVE_WEB_BIND=127.0.0.1`，仅限 NAS 本机访问；局域网访问把它改为 `0.0.0.0` 并**必须**同时设置 `BILIARCHIVE_WEB_TOKEN`（作为找回凭据的后门），否则面板容器拒绝启动。日常登录使用管理密码：首次启动自动生成初始密码并打印在日志中，登录后会强制改为 8-12 位含数字、大小写与符号的复杂密码。
 
 ### 方式三：Docker / Docker Compose 源码部署 (推荐服务器使用)
 
@@ -100,7 +107,7 @@ echo "BILIARCHIVE_WEB_TOKEN=$(python -c 'import secrets; print(secrets.token_url
 docker compose up -d biliarchive-web
 ```
 
-打开 `http://<主机IP>:8000` 并输入 Token。安全规则只看实际暴露范围（`--public-bind`）：暴露到非 loopback 必须配 token；优先使用 SSH 隧道或带 TLS 的反向代理，不要直接把未加密端口暴露到公网。
+打开 `http://<主机IP>:8000` 并用管理密码登录（首启密码见日志）。安全规则只看实际暴露范围（`--public-bind`）：暴露到非 loopback 必须配 `BILIARCHIVE_WEB_TOKEN` 作为后门；优先使用 SSH 隧道或带 TLS 的反向代理，不要直接把未加密端口暴露到公网。
 
 > **持久化说明**：Docker 会将 `data/`（数据库、凭证、运行状态和 `config.local.yaml`）、`downloads/`（视频与专栏库）、`bin/`（组件工具）映射到宿主机；`config.yaml` 只读挂载。WebUI 保存设置后需要重启 `biliarchive` 核心服务才会生效。
 
@@ -283,14 +290,16 @@ cd ..
 python web.py
 ```
 
-默认只监听 `127.0.0.1:8000`。若显式监听非 loopback 地址，必须通过环境变量提供 Token：
+默认只监听 `127.0.0.1:8000`。若显式监听非 loopback 地址，必须通过环境变量提供 Token（找回凭据的后门）：
 
 ```bash
 export BILIARCHIVE_WEB_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
 python web.py --host 0.0.0.0 --port 8000
 ```
 
-WebAPI 使用 SQLite `mode=ro` 浏览资产，不创建或迁移数据库。设置页只允许修改公开白名单字段，并原子写入本地覆盖配置；路径、Cookie 和代理地址不会通过 WebUI 暴露或修改。保存后重启核心进程以应用新配置。
+**登录方式（v1.9.1 起）**：WebUI 以管理密码登录。首次启动自动生成 12 位初始密码并打印在日志 / `data/webui_auth.json` 中，登录后强制修改为 8-12 位、同时包含数字、大小写字母与符号的复杂密码；环境令牌仍可直接登录作为后门。会话只在当前浏览器会话中保存。
+
+WebAPI 使用 SQLite `mode=ro` 浏览资产，不创建或迁移数据库（v1.9.1 起核心引擎首次启动会自动为存量库补 `source` 列并回填来源，不改动任何现有数据）。设置页可修改全部运行参数并区分「即时生效 / 需重启」：即时项保存后自动热重载到核心引擎，重启项会在下次核心重启后生效；数据库路径、Cookie 路径等私密字段仍不通过 WebUI 暴露。
 
 **核心引擎未运行时**，概览页会显示醒目的提示条并给出启动命令，而不是含糊的「等待扫描」——因为 `runtime.json` 在引擎停止后仍会留在磁盘上，仅凭它无法判断核心是否在跑。
 
@@ -303,6 +312,7 @@ WebUI 新增「操作」视图，可直接向核心引擎下发指令，无需 S
 | `trigger_scan` | 立即巡检 | 跳过剩余休眠时间，提前开始下一轮巡检；进行中的下载不被中断 |
 | `redownload_asset` | 重下单个资产 | 按 BV / av 编号重新抓取；本地已有文件不会被删除，按原目录规则写入并计入本轮下载量 |
 | `restart` | 提示重启核心 | 核心在当前轮次结束后**安全退出并关闭数据库**，由 systemd / Docker / supervisor 重新拉起 |
+| `reload_config` | 配置热重载 | 设置页保存后自动下发：来源列表、扫描参数等即时生效，无需重启（v1.9.1 起） |
 
 工作方式与 `runtime.json` 一致，属于本地文件命令通道，不引入 WebSocket：
 
@@ -364,160 +374,29 @@ cd webui && npm ci && npm run lint && npm test && npm run build
 
 ---
 
-## 🧾 最新改进（v1.9.0）
+## 🧾 最新改进（v1.9.1）
 
-完整版本说明见 [CHANGELOG.md](CHANGELOG.md)。
+完整版本说明见 [CHANGELOG.md](CHANGELOG.md)，历史版本明细见 [GitHub Releases](https://github.com/Stars4422335/BiliArchive-Pro/releases)。
 
-**NAS Docker 离线安装包**
+**WebUI 密码认证**
 
-- Release 新增 amd64 / arm64 双架构离线包：镜像 tar + 离线专用 compose + 《NAS安装指南》，覆盖极空间（SSH docker load + 图形化 Compose）与飞牛（纯 GUI 导入 + Compose 上传）两类安装路径。
-- 离线 compose 使用相对路径挂载（`./data`、`./downloads`），数据与媒体库持久化在 NAS 磁盘，升级/重建容器不丢数据。
+- 登录从固定环境令牌升级为管理密码：首次启动自动生成初始密码（打印在日志），登录后强制修改为 8-12 位含数字、大小写与符号的复杂密码；`BILIARCHIVE_WEB_TOKEN` 保留为找回凭据的后门。
+- 密码使用 PBKDF2-HMAC-SHA256 哈希存储，改密后全部旧会话立即失效。
 
-**WebUI 容器修复**
+**设置页全量化 + 配置热重载**
 
-- 修复纯 Docker 场景下面板启动即崩溃的问题（`0.0.0.0` 监听被当作公网暴露而强制要求 token）。
-- 新增 `--public-bind` 区分「监听地址」与「实际暴露范围」：默认暴露宿主机本机免 token；暴露局域网/公网必须配 token，配置不会错配。
-- compose webui 服务改为默认启动 + `restart: unless-stopped`。
+- 设置页覆盖全部运行参数（UP 主同步、词云、摘要、组件路径、GitHub 代理等此前只能改文件的项）。
+- 每项配置标注「即时生效 / 需重启」；即时项保存后通过命令通道自动热重载到核心引擎，无需重启。
 
-### v1.8.1 改进
+**收藏夹 / 合集自动发现**
 
-完整版本说明见 [CHANGELOG.md](CHANGELOG.md)。
+- 设置页一键拉取账号全部收藏夹（名称 + ID）、指定 UP 主的全部合集/系列（名称 + ID + UID），按 ID 去重合并进配置行。
+- 下载目录保持按来源名称分类（`downloads/<收藏夹或合集名>/`），自动发现的名称直接固化为目录名。
 
-**NFO 里写明封面位置**
+**资产页来源筛选**
 
-- 生成的 NFO 现在带 `<art>` 元素，指向这条媒体自己的封面：单 P 视频指向同目录的 `poster.jpg`，多 P 每一集指向自己同目录的 `<stem>-thumb.jpg`。
-- 写的是**相对 NFO 所在目录的相对路径**（统一用正斜杠），不写本机绝对路径——NFO 换机器、换目录后依然有效，也不会把本机目录结构写进媒体库。
-- 不给封面路径时，NFO 与以前逐字一致，既有媒体库不会因为多出一个标签而重新刮削。
-
-### v1.8.0 改进
-
-完整版本说明见 [CHANGELOG.md](CHANGELOG.md)。
-
-**结构性重构：三个上帝文件被拆开**
-
-- `app/scheduler/scanner.py`（1038 行 → 2.3 KB）：23 个方法按来源拆进 `app/scheduler/sources/` 下的十个 mixin（收藏夹 / 稍后再看 / 关注 / 图文 / 合集 / 历史 / 完整性 / 下载 / 强制重下 / 共享原语）。`FavScanner` 保留为门面，构造函数、进度回调与公开名字都不变，CLI、WebUI 与测试无需改用法。
-- `main.py`（737 行 → 141 行）：只做解析参数、读配置、装配启动；守护循环进 `app/scheduler/daemon.py`，凭据校验进 `app/core/auth.py`，命令调度进 `app/core/commands.py`。
-- `app/webui/service.py`（557 行 → 130 行）：读路径按查询域拆进 `app/webui/queries/`（settings / assets / overview / runtime）。
-
-**质量门禁：ruff + mypy + 覆盖率下限**
-
-- 新增 `ruff.toml` 与 `mypy.ini`，CI 增加 lint 作业；测试作业带 `--cov-fail-under=74`，等于重构前的基线，门槛只升不降。
-- **门禁当场抓出一个一直在空转的测试**：有个用例的函数体被辅助函数截断，四条断言落在 `return` 之后从未执行——它一直"绿着"却什么都没测。辅助函数移回文件顶部后断言恢复运行并通过，生产行为一直是对的。
-
-**Docker 测试闭环**
-
-- `Dockerfile` 新增 `webui-test` 与 `backend-test` 两个命名 target，`docker-compose.yml` 新增 `test` profile，`scripts/test-all.ps1` / `.sh` 一条命令跑完全部检查并输出统一结论表。容器用 `run --rm`，跑完即销，不留残留。
-- 在容器里跑测试暴露了本地跑不到的两件事：发布安全守卫读的是仓库元数据（运行时镜像刻意不带这些文件），以及进程树测试把僵尸进程当成活着的进程。
-
-**功能补齐**
-
-- **深分页改游标分页**：`assets` 表本就有 `(last_check DESC, bvid)` 索引，游标直接走索引，深分页不再扫描并丢弃前面的每一行；OFFSET 路径保留给还没有游标的调用。
-- **弹幕词云可以在面板里打开**：词云早就写在媒体旁边的 `<stem>.wordcloud.svg`，此前只能上磁盘找。
-- **发布矩阵新增 macOS Intel 产物**，构建 runner 为 `macos-15-intel`。
-
-**扫码登录适配 B 站的新协议**
-
-- B 站不再把 cookie 放在扫码响应里，而是返回一次性 ticket 地址，cookie 要从它的 `Set-Cookie` 头里取。`bilibili_api` 还在老地方找 cookie，于是登录"看起来成功"却拿到三个空字段，引擎随后报 -101。
-- `app/core/bili_login.py` 现在自己发请求、自己交换 ticket，同时从 cookie jar 与原始响应头两处读取；`login.py` 并拒绝保存没有 sessdata 的凭据，空壳登录过不去。
-
-### v1.7.1 改进
-
-**安全修复：专栏图片域名白名单可被绕过**
-
-- 专栏正文图片下载的白名单原先用裸 `endswith` 匹配域名，`https://evil-hdslb.com/x.jpg`、`https://notbilibili.com/x.jpg` 会被放行——攻击者注册此类域名即可让程序向他控制的服务器发起请求。
-- 现改为**按标签边界匹配**：域名本身，或以 `.受信域` 开头的真子域；且只接受 `https`。该缺陷自 v1.4.0 安全加固引入起一直存在。
-- 同时补齐了路径穿越与 SSRF 白名单的自动化回归测试（新增 38 例）。这两道防线此前只有一次性手工验证，因此缺陷长期未被发现。
-
-### v1.7.0 改进
-
-**性能治理（万级资产实测）**
-
-- WebUI 资产列表 **9.46ms → 0.11ms（87x）**：排序键去掉阻断索引的 `COALESCE()` 表达式，改走覆盖索引。
-- WebUI 计数 **8.12ms → 0.68ms（12x）**；三项查询合计 27.99ms → 14.03ms。
-- 索引在启动时自动创建（旧库无需手工迁移），并**主动删除实测有害的索引**——索引收益高度依赖数据分布。
-- 新增 `system.db_wal`（默认关闭）：WAL 让 WebUI 读取不再阻塞核心写入（5.5s → 15ms）。
-
-**内容摘要（本地，不外发）**
-
-- `summary.enabled` 从字幕抽取式生成摘要，写入 NFO `<outline>`（Plex 情节摘要字段）。
-- **纯本地计算，字幕绝不外发**；`mode: "llm"` 预留但明确拒绝，避免让人误以为内容已发送。
-- 少于两句不做摘要，订阅套话被过滤；多P 只生成一份。
-
-**弹幕词云**
-
-- `wordcloud.enabled` 基于同一份 `.danmaku.xml` 生成 `.wordcloud.svg`，**零新依赖**（bigram 分词 + 标准库拼 SVG），纯本地计算。
-
-**关注源图文投稿**
-
-- `followings.article_types` 可额外同步 UP 主的专栏（图文）投稿，复用收藏夹管线的 Markdown + NFO 流程。
-
-**社区基建**
-
-- 新增 `CONTRIBUTING.md`、Issue 模板（Bug / 功能建议）、PR 模板、`README.en.md` 英文版。
-- 推送版本标签即自动产出 Windows / macOS / Linux 三平台免 Python 环境分发包，含冒烟验证与 SHA256。
-
-### v1.6.0 改进
-
-- WebUI 新增「操作」视图：可下发 `trigger_scan`（立即巡检）、`redownload_asset`（重下单个资产）、`restart`（提示重启核心）三条指令，并查看每条指令的执行回执与审计历史。
-- 新增本地命令通道 `commands.json`（原子写入 + 幂等认领 + 有界审计），复用 `runtime.json` 的解耦哲学，不引入 WebSocket，WebUI 始终不直接连接守护进程。
-- 守护进程休眠改为可中断的分片轮询，"立即巡检"无需等待完整休眠周期；重下载请求在下一轮巡检命中时生效。
-- 安全边界：删除本地资产**不开放**，任何删除类指令都会被拒绝（含手工编辑 `commands.json` 注入）；资产编号只接受规范的 BV / av 编号，拒绝任意字符串与文件路径。
-- 后端测试从 141 例增加到 197 例，覆盖命令校验、幂等认领、审计留痕、失败回执与注入攻击防护。
-
-### v1.5.0 改进
-
-- 新增观看历史元数据同步：`sync_watch_history` 开启后把看过的视频记为本地观影档案（仅元数据，不下载视频本体），`max_history_days` 控制回溯窗口，增量轮次只追新记录。
-- 新增完整性巡检：`verify_integrity` 三档（off/light/full），light 校验文件非空与媒体容器签名，full 追加 ffmpeg 快速解码探测；每轮抽样最多 20 个资产，损坏只标记不删除。
-- 旧数据库打开时自动迁移新字段（`integrity_status`/`last_verify`），WebUI 资产页自动展示巡检结果。
-- 播放列表同步与既有合集同步（`sync_collections`）收敛：两者使用同一 B 站 API，不再重复实现。
-
-### v1.4.0 改进
-
-- 新增关注 UP 主全量同步：`followings.mode` 支持 `all`（同步账号全部关注）与 `list`（按 UID 指定，可监控任意 UP 主）；失效投稿自动进入墓碑与孤本保护，取关后本地已备份资产保留不动。
-- 新增 PyInstaller 打包配置 `build.spec`：核心引擎可打包为免 Python 环境的单目录分发（Windows 实测通过）。
-- 修复打包运行时的路径错误：`main.py`/`login.py` 在 PyInstaller frozen 环境下正确定位程序目录，源码模式行为不变。
-- 安全加固：专栏图片下载增加 B 站 CDN 域名白名单（防 SSRF）、新增路径包含检查纵深防御、NFO XML 解析改用 `defusedxml`、数据库迁移列名与 PRAGMA 参数加白名单/强转防护。
-
-### v1.3.0 改进
-
-- 新增独立 WebUI 管理进程，提供扫描概览、磁盘状态、真实封面、资产搜索/筛选/分页和响应式设置页。
-- WebAPI 使用 SQLite `mode=ro` 浏览媒体库；设置接口只允许公开白名单字段，并通过 revision 检测并发修改。
-- WebUI 默认仅监听 `127.0.0.1`；远程监听必须配置 Bearer Token，Token 仅保存在浏览器当前会话中。
-- Docker 镜像使用 Node 多阶段构建，仅携带前端 `dist`；Compose 可通过 `webui` profile 启动独立管理服务。
-- 多 P 视频按独立页面下载；Plex 模式生成 `Season 01/S01E##`、`tvshow.nfo`、分集 NFO 和标准封面，平铺模式使用稳定 `P##` 命名。
-- Active 记录按 `p_count` 与稳定分 P 标识复核，缺集自动续跑；关键 NFO 或标准封面失败时不写入数据库完成状态。
-- 同时请求普通字幕和自动字幕，弹幕转换支持滚动、反向、顶部、底部及轨道防重叠，并隔离异常文件。
-- 收藏夹、资产目录和媒体文件名增加危险组件规范化和完整路径预算，避免 Windows 保留名、路径逃逸及唯一标识碰撞。
-
-### v1.2.0 改进
-
-- 同步列表读取增加有限重试、指数退避、HTTP 超时和来源隔离，不再把读取失败误判为空列表。
-- `yt-dlp` 下载增加可配置超时；超时后终止下载进程树、清理临时 Cookie，并保留可续传的非空 `.part` 文件。
-- 失效视频缺少 `bvid` 时使用 `av{aid/id}` 稳定键，避免多个条目共用空数据库主键和 `unknown` 目录。
-- SQLite 启动时自动补齐旧表字段、修复历史空键，并在退出、异常或取消时关闭连接。
-- 合集同步要求配置所属 UP 主的 `mid`，两个合集 API 不再使用无效的硬编码 UID。
-
-### v1.1.3 改进
-
-- 项目许可证声明统一为 GPLv3。
-- 新增 `config.local.yaml` 本地覆盖机制，个人测试配置不再污染受跟踪模板。
-- Docker 改为运行文件白名单复制，并通过 `.dockerignore` 排除凭据、数据库、下载内容、本地环境和任务记录。
-- 登录凭据使用原子写入；每次下载使用独立的 Secure 临时 Cookie，结束后按所有权清理，并拒绝通过 HTTP 发送凭据。
-- `yt-dlp` 不再在下载流程中隐式安装；显式自动更新必须验证 GitHub 官方 SHA256，校验失败时保留现有文件。
-- 增加 Windows/Linux 的 GitHub Actions 测试、编译检查和 Docker 构建检查。
-- 精简尚未使用的 GUI、浏览器和调度依赖，降低安装与镜像体积。
-
-### v1.1.2 及此前改进
-
-- 新增“稍后再看”和 UP 主合集/列表同步入口，可通过 `system.sync_watch_later` 和 `sync_collections` 配置启用。
-- 启动时可通过 `system.check_update_on_start` 控制是否检查 `yt-dlp` / `ffmpeg` 组件。
-- 扫描间隔可通过 `system.scan_interval_seconds` 配置，便于 NAS 或服务器长期运行。
-- 下载前会按 `system.min_disk_gb` 检查剩余磁盘空间，防止磁盘被视频下载占满。
-- 下载时依次查找配置路径和系统 PATH，不会隐式下载可执行文件；组件自动更新只在启用启动检查且策略为 `auto` 时执行。
-- `ffmpeg` 不存在时会提示按系统安装或配置本地路径，不会自动下载。
-- 补齐运行依赖，并新增 pytest 基础测试覆盖核心路径、数据库、NFO 和运行配置。
-
----
+- 资产列表新增「来源」下拉（收藏夹 / 合集 / 稍后再看 / UP 主），与类型、状态筛选并列。
+- 存量库自动升级：核心首次启动为历史资产补 `source` 列并从路径回填来源，逐字段无损（行数不变、已有数据不改动）。
 
 ## ❓ 常见问题
 
@@ -546,8 +425,8 @@ python main.py --cli
 **下载的视频没有封面 / NFO**
 关键 NFO 或标准封面写入失败时，程序**不会**记录完成状态，下一轮会自动重试。若反复失败，检查媒体目录是否可写、以及磁盘是否已满（`system.min_disk_gb`）。
 
-**WebUI 提示"需要管理令牌"**
-非 loopback 地址监听时必须配置 `BILIARCHIVE_WEB_TOKEN`。默认只监听 `127.0.0.1`，本地使用无需令牌。
+**WebUI 登录密码 / 令牌**
+日常登录用管理密码：首启自动生成（看核心容器日志），登录后强制改密。`BILIARCHIVE_WEB_TOKEN` 是找回凭据的后门；非 loopback 监听时必须配置它，默认 `127.0.0.1` 无需令牌。
 
 **如何只归档视频、不抓专栏**
 `followings.mode` 控制关注源的视频投稿；专栏由 `followings.article_types` 单独控制，设为 `off`（默认）即可。
@@ -569,7 +448,7 @@ python main.py --cli
 - [x] **周期全量巡检**：自动记忆已归档资产，扫描时跳过重复下载并更新 `last_check`，默认每 6 小时重新巡检。
 - [x] **组件环境检查**：按策略检查 `yt-dlp`，自动更新前验证官方 SHA256；FFmpeg 只检查系统 PATH 或配置路径，不自动下载更新。
 - [x] **Docker 容器化**：提供包含 FFmpeg 与 Python 运行环境的镜像及 `docker-compose.yml` 部署方案。
-- [x] **WebUI 管理面板**：提供概览、资产浏览和白名单设置页面；数据库只读，远程监听必须配置 Token。
+- [x] **WebUI 管理面板**：概览、资产（含来源筛选）、全部设置项与运维指令；密码认证 + 令牌后门；数据库只读。
 - [x] **WebUI 可操作化**：「操作」视图可触发即时巡检、重下单个资产、提示重启核心；本地文件命令通道 + 执行回执审计，删除本地资产始终不开放。
 - [x] **智能路径管理**：跨平台安全的路径名非法字符过滤与防爆长路径自动截断机制。
 - [x] **全量同步关注UP主**：`followings.mode` 支持 `all`（全部关注）/ `list`（指定 UID），失效投稿自动进入墓碑与孤本保护；取关后本地资产保留。`article_types` 可额外同步专栏图文。

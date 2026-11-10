@@ -3,7 +3,7 @@
 > **Back up, sync, and organize your personal Bilibili assets — with a local WebUI**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Release: v1.9.0](https://img.shields.io/badge/release-v1.8.1-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.0)
+[![Release: v1.9.1](https://img.shields.io/badge/release-v1.9.1-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.1)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 
 [简体中文](README.md) | **English**
@@ -342,109 +342,15 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guide and the a
 
 ---
 
-## 🧾 What's new (v1.9.0)
+## 🧾 What's new (v1.9.1)
 
-Full details in [CHANGELOG.md](CHANGELOG.md).
+See [CHANGELOG.md](CHANGELOG.md) and the [release notes](https://github.com/Stars4422335/BiliArchive-Pro/releases) for details. For the full ZSpace NAS deployment walkthrough (in Chinese, field-tested), refer to the Chinese README.
 
-**The NFO now says where its artwork is**
-
-- Generated NFOs carry an `<art>` element pointing at the artwork of that very item: a single-P video points at the `poster.jpg` next to it, and each part of a multi-P video points at its own `<stem>-thumb.jpg`.
-- The reference is **relative to the directory the NFO lives in** (always with forward slashes), never an absolute path on this machine - so the NFO keeps working after the library is moved, and it does not leak the local directory layout into the media library.
-- Without an artwork path the NFO is byte-for-byte what it was before, so existing libraries are not re-scraped just because a new tag appeared.
-
-### v1.8.0
-
-Full details in [CHANGELOG.md](CHANGELOG.md).
-
-**Structural refactor: three god-files split apart**
-
-- `app/scheduler/scanner.py` (1038 lines -> 2.3 KB): its 23 methods now live in one mixin per source under `app/scheduler/sources/` (favourites / watch later / followings / articles / collections / history / integrity / download / forced re-download / shared primitives). `FavScanner` stays the facade: the constructor, the progress callback and the public names are unchanged, so the CLI, the panel and the tests need no changes.
-- `main.py` (737 lines -> 141): it now only parses arguments, reads the config and wires the engine up. The scan loop moved to `app/scheduler/daemon.py`, the credential check to `app/core/auth.py`, the command dispatch to `app/core/commands.py`.
-- `app/webui/service.py` (557 lines -> 130): the read paths are split by query domain into `app/webui/queries/` (settings / assets / overview / runtime).
-
-**Quality gates: ruff + mypy + a coverage floor**
-
-- New `ruff.toml` and `mypy.ini`, a lint job in CI, and `--cov-fail-under=74` on the test job - the pre-refactor baseline, so the floor can only move up.
-- **The linter immediately found a test that had been running hollow**: a helper function had been pasted into the middle of a test case, leaving its four assertions after a `return`, so they never ran. The helper moved back to the top of the file and the assertions execute again - and pass, because the production behaviour was right all along.
-
-**Docker test loop**
-
-- The Dockerfile gained `webui-test` and `backend-test` targets, the compose file a `test` profile, and `scripts/test-all.ps1` / `.sh` run everything and print one verdict table. The containers use `run --rm`, so nothing is left behind.
-- Running the suite inside the image surfaced two things the Windows run cannot: the release-safety guards read repository metadata that the runtime image deliberately does not ship, and the process-tree test mistook a zombie for a live process.
-
-**Feature completion**
-
-- **Deep pages now use a cursor**: the assets table already had an index on `(last_check DESC, bvid)`, so a cursor walks that index instead of scanning and discarding every row before it. The offset path stays for callers that have no cursor yet.
-- **The danmaku word cloud is reachable from the panel**: it has always been written next to the media as `<stem>.wordcloud.svg`, but there was no way to reach it but the filesystem.
-- **The release matrix gained a macOS Intel artefact**, built on the `macos-15-intel` runner.
-
-**QR login adapted to Bilibili's new protocol**
-
-- B站 no longer puts the cookies in the QR response; it returns a one-time ticket address and the cookies arrive in its `Set-Cookie` headers. `bilibili_api` still looks for them in the old place, so the login looked successful while producing three empty fields and the engine then failed with -101.
-- `app/core/bili_login.py` now issues the qrcode requests itself and exchanges the ticket, reading the cookies from both the cookie jar and the raw response headers; `login.py` refuses to save a credential without a sessdata, so a hollow login can no longer pass for a real one.
-
-### v1.7.1
-
-**Security fix: the article image allowlist could be bypassed**
-
-- The allowlist for images embedded in article bodies matched domains with a bare `endswith`, so `https://evil-hdslb.com/x.jpg` and `https://notbilibili.com/x.jpg` were accepted. An attacker who registers such a domain can make the program fetch from a host they control.
-- Matching is now done **on label boundaries** - the host itself, or a real subdomain beginning with `.` plus a trusted domain - and only `https` is accepted. The defect had been present since the v1.4.0 hardening.
-- Automated regression tests were added for both the allowlist and path containment (38 new cases). Those defenses previously had only a one-off manual check, which is why the defect went unnoticed.
-
-### v1.7.0
-
-**Performance (measured against 20k assets)**
-
-- WebUI asset list **9.46ms to 0.11ms (87x)**: the sort key dropped a `COALESCE()` call that blocked index use, so it now walks a covering index.
-- WebUI count **8.12ms to 0.68ms (12x)**; three queries combined 27.99ms to 14.03ms.
-- Indexes are created at startup (existing databases need no migration) and indexes that measurably hurt are dropped — index benefit depends heavily on data distribution.
-- New `system.db_wal` (off by default): WAL stops WebUI reads from blocking core writes (5.5s down to 15ms).
-
-**Content summaries (local, nothing uploaded)**
-
-- `summary.enabled` generates an extractive summary from subtitles into the NFO `<outline>` element (Plex's plot outline field).
-- **Entirely local; subtitles are never uploaded.** `mode: "llm"` is reserved but explicitly refused, so nobody is misled into thinking content was sent.
-- Videos with fewer than two sentences are skipped, subscription filler is filtered, and multi-part videos get a single summary.
-
-**Danmaku word clouds**
-
-- `wordcloud.enabled` generates a `.wordcloud.svg` from the same `.danmaku.xml` with **no new dependencies** (bigram segmentation plus the standard library), fully local.
-
-**Articles for followed creators**
-
-- `followings.article_types` additionally syncs a creator's image-text posts, reusing the favorites pipeline for Markdown and NFO.
-
-**Community infrastructure**
-
-- New `CONTRIBUTING.md`, Issue templates (bug / feature), a PR template, and an English `README.en.md`.
-- Pushing a version tag now automatically produces Windows, macOS, and Linux Python-free distributions, with smoke tests and SHA256 checksums.
-
-### v1.6.0
-
-- The WebUI gained an **Operations** view: dispatch `trigger_scan` (scan now), `redownload_asset` (re-download one asset), and `restart` (request a core restart), and inspect each command's acknowledgement and audit trail.
-- New local command channel `commands.json` (atomic writes, idempotent claiming, bounded audit) reusing the `runtime.json` philosophy. No WebSocket; the WebUI never connects to the daemon directly.
-- Daemon sleep became interruptible polling, so "scan now" no longer waits out the full interval; re-download requests take effect on the next sweep.
-- Safety boundary: deleting local assets is **never** exposed, including via a hand-edited `commands.json`; asset IDs accept only canonical BV / av identifiers.
-- Backend tests grew from 141 to 197 cases, covering validation, idempotent claiming, audit trails, failure receipts, and injection defenses.
-
-### v1.5.0
-
-- Watch-history metadata sync: `sync_watch_history` records watched videos as a local viewing archive (metadata only), with a `max_history_days` window and incremental rounds.
-- Integrity checks: `verify_integrity` in three levels, `light` verifying non-empty files and container signatures, `full` adding an ffmpeg decode probe; at most 20 assets sampled per round, corrupt files are marked, never deleted.
-- Old databases migrate new columns automatically; the WebUI asset page surfaces the results.
-
-### v1.4.0
-
-- Full follow-sync: `followings.mode` supports `all` and `list` (any UID, no follow relationship required); dead submissions enter the tombstone / orphan-protection path, and unfollowing keeps local assets.
-- New PyInstaller configuration `build.spec` for a Python-free directory distribution.
-- Frozen-mode path fix: `main.py` / `login.py` locate the program directory correctly under PyInstaller.
-- Security hardening: Bilibili CDN allowlist for article images (SSRF), path-containment checks, `defusedxml` for NFO XML, and allowlisted migration column names.
-
-### Earlier versions
-
-See [CHANGELOG.md](CHANGELOG.md) for v1.3.0 and below (WebUI introduction, Plex sidecar output, retry/timeout reliability, per-page downloads, danmaku rendering, and credential hardening).
-
----
+- **Password authentication for the WebUI**: first start generates a random bootstrap password (printed to the log), and the panel forces a complex 8-12 character password on first login. The environment token remains as a recovery backdoor.
+- **Complete settings page with hot reload**: every runtime option is now editable; each field is labelled "effective immediately" (applied to the running core via the command channel) or "requires restart".
+- **Favorites & collections auto-discovery**: pull all favorites (name + id) or a uploader's collections (name + id + uid) straight into the config rows.
+- **Asset source filter**: filter the asset list by favorites/collections/watch-later/uploader. Existing databases are migrated in place (additive-only, field-by-field lossless backfill).
+- **Docs overhaul**: the README now includes a field-tested ZSpace NAS deployment walkthrough; historical release notes live in GitHub Releases.
 
 ## ❓ Troubleshooting
 

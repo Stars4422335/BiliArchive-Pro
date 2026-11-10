@@ -2,6 +2,36 @@
 
 本文件记录正式发布版本的用户可见变更。版本号遵循语义化版本格式。
 
+## [1.9.1] - 2026-11-10
+
+### WebUI 密码认证
+
+- 登录从固定环境令牌升级为管理密码：首次启动自动生成 12 位初始密码并打印在日志与 `data/webui_auth.json` 中，登录后强制修改为 8-12 位、同时包含数字、大小写字母与符号的复杂密码。
+- 密码以 PBKDF2-HMAC-SHA256（24 万次迭代 + 16 字节盐）哈希存储；修改密码后所有旧会话立即失效。
+- `BILIARCHIVE_WEB_TOKEN` 环境令牌保留为找回凭据的后门，可在登录页切换「环境令牌」方式直接登录。
+- 新增 `/api/auth/login`、`/api/auth/change-password`、`/api/auth/logout`；`/api/health` 返回 `force_change`。
+
+### 设置页全量化与配置热重载
+
+- 设置页覆盖全部运行参数：UP 主同步来源、词云与摘要开关、yt-dlp / FFmpeg 自定义路径、GitHub 代理前缀、完整性巡检档位、观看历史同步等此前只能手改文件的项全部开放（数据库路径、Cookie 路径等私密字段仍不通过 WebUI 暴露）。
+- 每项配置标注「即时生效 / 需重启」；即时项保存后自动通过命令通道下发 `reload_config`，核心引擎下一轮扫描即使用新值，无需重启。
+- 核心引擎新增 `reload_config` 命令；收藏夹列表从启动快照改为每轮读取，热重载后来源变化立即生效。
+
+### 收藏夹 / 合集自动发现
+
+- 设置页新增「自动获取我的收藏夹」与「获取该 UP 主的合集」：按账号或指定 UID 拉取名称与 ID（合集含 UP 主 UID），按 ID 去重合并进配置行，不再需要手动查询 ID。
+- 新增 `GET /api/discover/favorites`、`GET /api/discover/collections?mid=` 只读端点。
+
+### 资产页来源筛选
+
+- 资产列表新增「来源」下拉（收藏夹 / 合集 / 稍后再看 / UP 主名称），与类型、状态筛选并列，支持组合筛选与游标分页。
+- 数据库新增 `source` 列（SCHEMA v2）：核心引擎首次启动自动迁移，并为存量资产从下载路径回填来源；迁移只加列、只补空值，行数与已有字段逐字段无损（经 v1.9.0 真实库预演验证）。
+- 新增 `GET /api/assets/sources` 端点与按来源筛选参数；旧库（未迁移）在核心完成迁移前优雅降级，来源列表从路径推导。
+
+### 文档与部署
+
+- README 全面精简：新增极空间实测部署流程（上传镜像 tar → Docker UI 导入 → Compose 绝对路径挂载 → 客户端内打开），历史版本明细移至 GitHub Releases。
+
 ## [1.9.0] - 2026-11-10
 
 ### NAS Docker 离线安装包
@@ -320,6 +350,7 @@
 - 本版本不提供 EXE 或 App；跨平台独立可执行文件仍属于后续阶段。
 
 [Unreleased]: https://github.com/Stars4422335/BiliArchive-Pro/compare/v1.9.0...HEAD
+[1.9.1]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.1
 [1.9.0]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.0
 [1.8.1]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.8.1
 [1.8.0]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.8.0
