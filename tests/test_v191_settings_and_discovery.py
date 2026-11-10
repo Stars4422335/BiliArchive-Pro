@@ -16,7 +16,6 @@ from app.webui.queries.settings import (
     validate_config_payload,
 )
 
-
 # ---------- followings ----------
 
 

@@ -148,8 +148,7 @@ class WebService(
 
     async def discover_favorites(self) -> dict[str, Any]:
         """全部视频收藏夹（名称 + id + 数量），供设置页自动填充。"""
-        from app.core.parser import BiliParser
-        from app.core.parser import SyncFetchError
+        from app.core.parser import BiliParser, SyncFetchError
 
         credential, uid = await self._login_credential()
         parser = BiliParser(credential, uid=uid)
@@ -161,8 +160,7 @@ class WebService(
 
     async def discover_collections(self, mid: int | None = None) -> dict[str, Any]:
         """指定 UP 主（缺省登录账号）的全部合集/系列。"""
-        from app.core.parser import BiliParser
-        from app.core.parser import SyncFetchError
+        from app.core.parser import BiliParser, SyncFetchError
 
         credential, uid = await self._login_credential()
         target = int(mid) if mid else uid
