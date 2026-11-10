@@ -80,6 +80,7 @@ def test_health_is_public_and_dashboard_has_read_only_aggregates(webui_fixture):
         "status": "ok",
         "auth_required": False,
         "authenticated": True,
+        "force_change": False,
     }
     dashboard = client.get("/api/dashboard")
     assert dashboard.status_code == 200
@@ -135,8 +136,9 @@ def test_config_redacts_private_fields_and_uses_revision_conflicts(webui_fixture
     assert "revision" in body
     assert "db_path" not in json.dumps(body, ensure_ascii=False)
     assert "cookie_path" not in json.dumps(body, ensure_ascii=False)
-    assert "github_proxy_url" not in json.dumps(body, ensure_ascii=False)
-    assert body["config"]["components"]["yt-dlp"] == {"strategy": "auto"}
+    # v1.9.1 起代理地址进入公共配置；真正的私密路径仍然脱敏。
+    assert body["config"]["network"]["github_proxy_url"] == "https://proxy.invalid/"
+    assert body["config"]["components"]["yt-dlp"]["strategy"] == "auto"
 
     update = {"revision": body["revision"], "config": {"system": {"min_disk_gb": 9}}}
     saved = client.put("/api/config", json=update)
@@ -210,6 +212,7 @@ def test_non_loopback_requires_token_and_token_protects_api(webui_fixture):
         "status": "ok",
         "auth_required": True,
         "authenticated": False,
+        "force_change": True,
     }
     assert client.get(
         "/api/health", headers={"Authorization": "Bearer test-token"}
@@ -220,6 +223,72 @@ def test_non_loopback_requires_token_and_token_protects_api(webui_fixture):
     assert client.get(
         "/api/dashboard", headers={"Authorization": "Bearer test-token"}
     ).status_code == 200
+
+
+def test_password_login_change_and_token_backdoor(webui_fixture):
+    """密码认证主链路：bootstrap 密码 → 强制改密 → 会话失效 → token 后门。"""
+    _, root, config_path = webui_fixture
+    app = create_app(
+        project_root=root,
+        config_path=config_path,
+        db_path=root / "archive.db",
+        host="0.0.0.0",
+        token="test-token",
+    )
+    client = TestClient(app)
+    auth_file = root / "data" / "webui_auth.json"
+    assert auth_file.is_file()
+    stored = json.loads(auth_file.read_text(encoding="utf-8"))
+    bootstrap_password = stored["initial_password"]
+    assert stored["force_change"] is True
+
+    # 错误密码拒绝
+    assert client.post(
+        "/api/auth/login", json={"password": "definitely-wrong"}
+    ).status_code == 401
+    # bootstrap 密码登录成功且要求强制改密
+    login = client.post("/api/auth/login", json={"password": bootstrap_password})
+    assert login.status_code == 200
+    assert login.json()["force_change"] is True
+    session = login.json()["session"]
+    headers = {"Authorization": f"Bearer {session}"}
+    assert client.get("/api/dashboard", headers=headers).status_code == 200
+
+    # 复杂度不足的新密码被拒绝
+    weak = client.post(
+        "/api/auth/change-password",
+        json={"old_password": bootstrap_password, "new_password": "weakpwd1"},
+        headers=headers,
+    )
+    assert weak.status_code == 422
+
+    # 正常改密：旧会话撤销、新会话可用、force_change 解除
+    changed = client.post(
+        "/api/auth/change-password",
+        json={"old_password": bootstrap_password, "new_password": "Abc!2345"},
+        headers=headers,
+    )
+    assert changed.status_code == 200
+    new_session = changed.json()["session"]
+    assert changed.json()["force_change"] is False
+    assert client.get("/api/dashboard", headers=headers).status_code == 401
+    assert client.get(
+        "/api/dashboard", headers={"Authorization": f"Bearer {new_session}"}
+    ).status_code == 200
+
+    # 环境令牌后门仍然直接可用
+    token_login = client.post("/api/auth/login", json={"token": "test-token"})
+    assert token_login.status_code == 200
+    assert client.get(
+        "/api/dashboard",
+        headers={"Authorization": f"Bearer {token_login.json()['session']}"},
+    ).status_code == 200
+
+    # 登出撤销会话
+    assert client.post("/api/auth/logout", headers={"Authorization": f"Bearer {new_session}"}).json() == {"ok": True}
+    assert client.get(
+        "/api/dashboard", headers={"Authorization": f"Bearer {new_session}"}
+    ).status_code == 401
 
 
 def test_container_listen_0_0_0_0_with_loopback_public_bind_needs_no_token(
@@ -274,7 +343,12 @@ def test_commands_endpoint_lists_supported_commands_and_empty_queue(webui_fixtur
 
     assert response.status_code == 200
     body = response.json()
-    assert set(body["supported"]) == {"trigger_scan", "restart", "redownload_asset"}
+    assert set(body["supported"]) == {
+        "trigger_scan",
+        "restart",
+        "redownload_asset",
+        "reload_config",
+    }
     assert body["pending"] == []
 
 

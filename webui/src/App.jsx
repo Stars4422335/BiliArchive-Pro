@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import AppShell from "./components/AppShell";
 import { ApiError, api, clearStoredToken, storeToken } from "./api/client";
 import { configPayload, normalizeAssets, normalizeConfig, normalizeDashboard } from "./data/normalize";
-import { TokenGate } from "./components/ui";
+import { PasswordChangeDialog, TokenGate } from "./components/ui";
 import OverviewView from "./views/OverviewView";
 import AssetsView from "./views/AssetsView";
 import OperationsView from "./views/OperationsView";
@@ -17,9 +17,12 @@ export default function App() {
   const [errors, setErrors] = useState(emptyErrors);
   const [authRequired, setAuthRequired] = useState(false);
   const [authMessage, setAuthMessage] = useState("");
+  const [forceChange, setForceChange] = useState(false);
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [passwordError, setPasswordError] = useState("");
   const assetRequest = useRef(0);
 
-  const requireAuthentication = useCallback((message = "令牌无效或已过期，请重新输入。令牌只保存在当前浏览器会话中。") => {
+  const requireAuthentication = useCallback((message = "登录状态无效或已过期，请重新登录。会话只保存在当前浏览器中。") => {
     setAuthRequired(true);
     setAuthMessage(message);
   }, []);
@@ -75,10 +78,11 @@ export default function App() {
       const health = await api.getHealth();
       if (health.auth_required && !health.authenticated) {
         setLoading((current) => ({ ...current, dashboard: false, config: false }));
-        requireAuthentication("当前 API 需要管理令牌。令牌只保存在当前浏览器会话中。");
+        requireAuthentication("请输入管理密码登录。首次使用请查看服务日志中的自动生成密码。");
         return;
       }
       setAuthRequired(false);
+      if (health.force_change) setPasswordDialogOpen(true);
       await loadCoreData();
     } catch (error) {
       const message = error?.message || "无法连接到管理 API。";
@@ -89,19 +93,32 @@ export default function App() {
 
   useEffect(() => { bootstrap(); }, [bootstrap]);
 
-  async function handleTokenSubmit(token) {
-    if (!token.trim()) return;
-    storeToken(token);
+  async function handleTokenSubmit(secret, mode = "password") {
+    if (!secret.trim()) return;
     try {
-      const health = await api.getHealth();
-      if (health.auth_required && !health.authenticated) {
-        requireAuthentication();
-        return;
-      }
+      const result = await api.login(mode === "password" ? { password: secret } : { token: secret });
+      storeToken(result.session);
+      setForceChange(Boolean(result.force_change));
+      if (result.force_change) setPasswordDialogOpen(true);
       setAuthRequired(false);
+      setAuthMessage("");
       await loadCoreData();
     } catch (error) {
-      requireAuthentication(error?.message || "无法连接到管理 API。");
+      const detail = error instanceof ApiError ? error.message : "无法连接到管理 API。";
+      requireAuthentication(detail);
+    }
+  }
+
+  async function handlePasswordChange(oldPassword, newPassword) {
+    setPasswordError("");
+    try {
+      const result = await api.changePassword(oldPassword, newPassword);
+      storeToken(result.session);
+      setForceChange(false);
+      setPasswordDialogOpen(false);
+      setPasswordError("");
+    } catch (error) {
+      setPasswordError(error instanceof ApiError ? error.message : "修改密码失败，请重试。");
     }
   }
 
@@ -115,12 +132,13 @@ export default function App() {
     }
   }
 
-  if (authRequired) return <TokenGate message={authMessage} onSubmit={handleTokenSubmit} onClear={() => { clearStoredToken(); setAuthMessage("已清除本地会话令牌。"); }} />;
+  if (authRequired) return <TokenGate message={authMessage} onSubmit={handleTokenSubmit} onClear={() => { clearStoredToken(); setAuthMessage("已清除本地会话。"); }} />;
 
-  return <AppShell activeView={activeView} onNavigate={setActiveView}>
+  return <AppShell activeView={activeView} onNavigate={setActiveView} onChangePassword={() => { setPasswordError(""); setPasswordDialogOpen(true); }}>
     {activeView === "overview" && <OverviewView dashboard={data.dashboard} loading={loading.dashboard} error={errors.dashboard} onRetry={loadCoreData} onRefresh={loadCoreData} onOpenAssets={() => setActiveView("assets")} />}
     {activeView === "assets" && <AssetsView assets={data.assets} loading={loading.assets} error={errors.assets} onLoad={loadAssets} />}
     {activeView === "operations" && <OperationsView requireAuthentication={requireAuthentication} />}
     {activeView === "settings" && <SettingsView config={data.config} loading={loading.config} error={errors.config} onRetry={loadCoreData} onSave={handleConfigSave} />}
+    {(passwordDialogOpen || forceChange) && <PasswordChangeDialog required={forceChange} onSubmit={handlePasswordChange} onClose={forceChange ? undefined : () => { setPasswordDialogOpen(false); setPasswordError(""); }} error={passwordError} />}
   </AppShell>;
 }

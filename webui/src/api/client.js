@@ -58,6 +58,12 @@ async function requestBlob(path) {
 
 export const api = {
   getHealth: () => request("/api/health"),
+  login: ({ password, token }) => request("/api/auth/login", { method: "POST", body: JSON.stringify(password ? { password } : { token }) }),
+  changePassword: (oldPassword, newPassword) => request("/api/auth/change-password", { method: "POST", body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }) }),
+  logout: () => request("/api/auth/logout", { method: "POST" }),
+  getAssetSources: () => request("/api/assets/sources"),
+  getDiscoverFavorites: () => request("/api/discover/favorites"),
+  getDiscoverCollections: (mid) => request(`/api/discover/collections${mid ? `?mid=${encodeURIComponent(mid)}` : ""}`),
   getDashboard: () => request("/api/dashboard"),
   getAssets: (parameters = {}) => {
     const search = new URLSearchParams();

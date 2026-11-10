@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from app import __version__
 from app.core.commands import CommandError
 
+from .auth_store import AuthStore, PasswordPolicyError
 from .service import (
     ConfigValidationError,
     RevisionConflict,
@@ -59,22 +60,43 @@ def create_app(
     app = FastAPI(title="BiliArchive-Pro WebUI API")
     app.state.web_service = service
 
-    def request_is_authenticated(request: Request) -> bool:
-        if token is None:
-            return True
+    # Password credential store; when the data directory is read-only or the
+    # file cannot be created we fall back to "env token only" semantics so
+    # existing deployments keep booting.
+    auth_store: AuthStore | None = None
+    if token is not None:
+        try:
+            auth_store = AuthStore(root / "data" / "webui_auth.json")
+        except (OSError, ValueError) as exc:
+            print(f"[!] WebUI 密码存储不可用，退回环境令牌认证: {exc}")
+            auth_store = None
+    app.state.auth_store = auth_store
+
+    def bearer_token(request: Request) -> str | None:
         scheme, _, supplied = request.headers.get("authorization", "").partition(" ")
-        return (
-            scheme.lower() == "bearer"
-            and bool(supplied)
-            and hmac.compare_digest(supplied, token)
-        )
+        if scheme.lower() != "bearer" or not supplied:
+            return None
+        return supplied
+
+    def request_is_authenticated(request: Request) -> bool:
+        supplied = bearer_token(request)
+        if not supplied:
+            return token is None
+        if token is not None and hmac.compare_digest(supplied, token):
+            return True
+        if auth_store is not None and auth_store.session_is_valid(supplied):
+            return True
+        return False
 
     @app.middleware("http")
     async def api_authentication(request: Request, call_next):
-        if token is not None and request.url.path.startswith("/api/") and request.url.path != "/api/health":
+        if request.url.path.startswith("/api/") and request.url.path not in {
+            "/api/health",
+            "/api/auth/login",
+        }:
             if not request_is_authenticated(request):
                 return JSONResponse(
-                    {"detail": "需要 Bearer token"},
+                    {"detail": "需要登录凭据"},
                     status_code=401,
                     headers={"WWW-Authenticate": "Bearer"},
                 )
@@ -86,7 +108,65 @@ def create_app(
             "status": "ok",
             "auth_required": token is not None,
             "authenticated": request_is_authenticated(request),
+            "force_change": bool(auth_store is not None and auth_store.force_change),
         }
+
+    @app.post("/api/auth/login")
+    async def auth_login(request: Request) -> JSONResponse:
+        body_ok = True
+        try:
+            body = await request.json()
+        except ValueError:
+            body_ok = False
+            body = {}
+        if not body_ok or not isinstance(body, dict):
+            raise HTTPException(status_code=422, detail="请求体必须是 JSON 对象")
+        password = body.get("password")
+        env_token = body.get("token")
+        if not isinstance(password, str) or not password:
+            if not isinstance(env_token, str) or not env_token:
+                raise HTTPException(status_code=422, detail="缺少 password 或 token")
+        if auth_store is None:
+            # Degraded mode: only the environment token authenticates.
+            if token is not None and isinstance(env_token, str) and hmac.compare_digest(env_token, token):
+                return JSONResponse({"session": env_token, "force_change": False})
+            raise HTTPException(status_code=401, detail="密码认证不可用，请使用环境令牌")
+        matched = False
+        if isinstance(password, str) and password:
+            matched = auth_store.verify_bootstrap_or_password(password)
+        elif isinstance(env_token, str) and token is not None and hmac.compare_digest(env_token, token):
+            matched = True
+        if not matched:
+            raise HTTPException(status_code=401, detail="密码或令牌不正确")
+        session = auth_store.issue_session()
+        return JSONResponse({"session": session, "force_change": auth_store.force_change})
+
+    @app.post("/api/auth/change-password")
+    async def auth_change_password(request: Request) -> JSONResponse:
+        if auth_store is None:
+            raise HTTPException(status_code=503, detail="密码认证不可用")
+        try:
+            body = await request.json()
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="请求体必须是 JSON 对象") from exc
+        if not isinstance(body, dict):
+            raise HTTPException(status_code=422, detail="请求体必须是 JSON 对象")
+        old_password = body.get("old_password")
+        new_password = body.get("new_password")
+        if not isinstance(old_password, str) or not isinstance(new_password, str):
+            raise HTTPException(status_code=422, detail="缺少 old_password 或 new_password")
+        try:
+            session = auth_store.change_password(old_password, new_password)
+        except PasswordPolicyError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return JSONResponse({"session": session, "force_change": auth_store.force_change})
+
+    @app.post("/api/auth/logout")
+    async def auth_logout(request: Request) -> dict[str, bool]:
+        supplied = bearer_token(request)
+        if supplied and auth_store is not None:
+            auth_store.revoke_session(supplied)
+        return {"ok": True}
 
     @app.get("/api/dashboard")
     async def dashboard() -> dict:
@@ -103,6 +183,7 @@ def create_app(
         q: str | None = Query(default=None),
         status: str | int | None = Query(default=None),
         type: str | None = Query(default=None),
+        source: str | None = Query(default=None),
         page: int = Query(default=1),
         page_size: int = Query(default=20),
         cursor: str | None = Query(default=None),
@@ -112,6 +193,7 @@ def create_app(
                 query=query or q,
                 status=status,
                 asset_type=type,
+                source=source,
                 page=page,
                 page_size=page_size,
                 cursor=cursor,
@@ -120,6 +202,36 @@ def create_app(
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except Exception as exc:
             raise HTTPException(status_code=503, detail="数据库不可读") from exc
+
+    @app.get("/api/assets/sources")
+    async def asset_sources() -> dict:
+        """来源（收藏夹/合集/稍后再看/UP 主）列表，供资产页筛选下拉。"""
+        try:
+            return {"sources": service.distinct_sources()}
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="数据库不可读") from exc
+
+    @app.get("/api/discover/favorites")
+    async def discover_favorites() -> dict:
+        try:
+            return await service.discover_favorites()
+        except CommandError as exc:
+            raise HTTPException(
+                status_code=getattr(exc, "status", 503), detail=str(exc)
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=f"自动发现失败: {exc}") from exc
+
+    @app.get("/api/discover/collections")
+    async def discover_collections(mid: int | None = Query(default=None)) -> dict:
+        try:
+            return await service.discover_collections(mid)
+        except CommandError as exc:
+            raise HTTPException(
+                status_code=getattr(exc, "status", 503), detail=str(exc)
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=f"自动发现失败: {exc}") from exc
 
     @app.get("/api/assets/{asset_id}/poster")
     async def poster(asset_id: str) -> FileResponse:

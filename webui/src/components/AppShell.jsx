@@ -1,4 +1,4 @@
-import { Archive, Boxes, LayoutDashboard, Settings, ShieldCheck, Terminal } from "lucide-react";
+import { Archive, Boxes, KeyRound, LayoutDashboard, Settings, ShieldCheck, Terminal } from "lucide-react";
 
 const navItems = [
   { id: "overview", label: "概览", icon: LayoutDashboard },
@@ -16,7 +16,7 @@ function NavItems({ activeView, onNavigate }) {
   ));
 }
 
-export default function AppShell({ activeView, onNavigate, children }) {
+export default function AppShell({ activeView, onNavigate, onChangePassword, children }) {
   return (
     <div className="app-shell">
       <aside className="desktop-sidebar">
@@ -25,12 +25,15 @@ export default function AppShell({ activeView, onNavigate, children }) {
           <div><strong>BiliArchive</strong><span>管理面板</span></div>
         </div>
         <nav className="sidebar-nav" aria-label="主导航"><NavItems activeView={activeView} onNavigate={onNavigate} /></nav>
-        <div className="sidebar-footer"><ShieldCheck size={15} /><span>本地资产保护</span></div>
+        <div className="sidebar-footer">
+          <button className="text-button sidebar-password-button" type="button" onClick={onChangePassword}><KeyRound size={14} /><span>修改密码</span></button>
+          <span className="sidebar-footer-note"><ShieldCheck size={15} />本地资产保护</span>
+        </div>
       </aside>
       <div className="main-column">
         <header className="mobile-header">
           <div className="brand-lockup"><div className="brand-mark"><Archive size={17} /></div><strong>BiliArchive</strong></div>
-          <span className="mobile-header-label">管理面板</span>
+          <button className="text-button" type="button" onClick={onChangePassword}><KeyRound size={15} />改密</button>
         </header>
         <main className="page-content">{children}</main>
       </div>
