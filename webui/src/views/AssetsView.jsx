@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight, FileSearch, Filter, Search, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { api } from "../api/client";
 import { assetTitle, assetType, formatDate } from "../data/normalize";
 import { EmptyState, ErrorState, IconButton, LoadingState, StatusBadge } from "../components/ui";
 import { PosterImage, Thumb } from "./OverviewView";
@@ -13,6 +14,8 @@ export default function AssetsView({ assets, loading, error, onLoad }) {
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [sourceFilter, setSourceFilter] = useState("all");
+  const [sources, setSources] = useState([]);
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState(null);
   // The cursor that opens each page. It is learned from the previous page's
@@ -23,13 +26,26 @@ export default function AssetsView({ assets, loading, error, onLoad }) {
     query: query.trim(),
     type: typeFilter,
     status: statusFilter,
+    source: sourceFilter,
     page,
     page_size: PAGE_SIZE,
     ...(cursorForPage ? { cursor: cursorForPage } : {}),
-  }), [page, query, statusFilter, typeFilter, cursorForPage]);
+  }), [page, query, statusFilter, typeFilter, sourceFilter, cursorForPage]);
   const refresh = useCallback(() => onLoad(parameters), [onLoad, parameters]);
   const currentItems = assets?.items || [];
   const pages = Math.max(1, Math.ceil((assets?.total || 0) / PAGE_SIZE));
+
+  const loadSources = useCallback(async () => {
+    try {
+      const body = await api.getAssetSources();
+      setSources(Array.isArray(body?.sources) ? body.sources : []);
+    } catch {
+      // 来源列表加载失败不阻塞资产列表，仅下拉为空。
+      setSources([]);
+    }
+  }, []);
+
+  useEffect(() => { loadSources(); }, [loadSources]);
 
   useEffect(() => {
     const timer = window.setTimeout(refresh, query.trim() ? 250 : 0);
@@ -50,17 +66,18 @@ export default function AssetsView({ assets, loading, error, onLoad }) {
 
   return (
     <div className="view-stack">
-      <header className="page-header"><div><p className="page-kicker">本地媒体库</p><h1>资产</h1><p className="page-description">浏览已归档视频、专栏和源端失效记录。</p></div></header>
+      <header className="page-header"><div><p className="page-kicker">本地媒体库</p><h1>资产</h1><p className="page-description">浏览已归档视频、专栏和源端失效记录，按收藏夹/合集筛选。</p></div></header>
       <section className="content-section assets-section" aria-labelledby="assets-list-title">
         <div className="section-heading"><div><h2 id="assets-list-title">资产列表</h2><p>{assets ? `共 ${assets.total} 条匹配记录` : "正在读取资产数据"}</p></div><span className="table-count"><FileSearch size={15} />{assets?.total ?? 0} 条</span></div>
         <div className="toolbar">
           <label className="search-field"><Search size={16} /><span className="sr-only">搜索资产</span><input value={query} onChange={(event) => updateFilter(setQuery, event.target.value)} placeholder="搜索标题、BV 号或 UP 主" /></label>
           <label className="select-field"><Filter size={15} /><span className="sr-only">资产类型</span><select value={typeFilter} onChange={(event) => updateFilter(setTypeFilter, event.target.value)}><option value="all">全部类型</option><option value="video">视频</option><option value="article">专栏</option></select></label>
+          <label className="select-field"><span className="sr-only">资产来源</span><select value={sourceFilter} onChange={(event) => updateFilter(setSourceFilter, event.target.value)}><option value="all">全部来源</option>{sources.map((item) => <option key={item.source} value={item.source}>{item.source}（{item.count}）</option>)}</select></label>
           <label className="select-field"><span className="sr-only">资产状态</span><select value={statusFilter} onChange={(event) => updateFilter(setStatusFilter, event.target.value)}><option value="all">全部状态</option><option value="active">已归档</option><option value="tombstoned">失效墓碑</option><option value="protected">源端已删保护</option></select></label>
         </div>
         {loading && !assets && <LoadingState label="正在加载资产" />}
         {error && <ErrorState message={error} onRetry={refresh} />}
-        {!loading && !error && assets && currentItems.length === 0 && <EmptyState title={query || typeFilter !== "all" || statusFilter !== "all" ? "没有匹配资产" : "暂无资产"} description="尝试调整搜索或筛选条件。" />}
+        {!loading && !error && assets && currentItems.length === 0 && <EmptyState title={query || typeFilter !== "all" || statusFilter !== "all" || sourceFilter !== "all" ? "没有匹配资产" : "暂无资产"} description="尝试调整搜索或筛选条件。" />}
         {currentItems.length > 0 && <AssetTable assets={currentItems} onSelect={setSelected} />}
         {assets && assets.total > 0 && <Pagination page={page} pages={pages} onPageChange={setPage} />}
       </section>

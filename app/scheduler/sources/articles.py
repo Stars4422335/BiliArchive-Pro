@@ -95,7 +95,7 @@ class ArticlesMixin:
                     print(f"[-] 专栏 NFO 写入失败，未记录完成状态: {article_key}")
                     continue
 
-                self.db.update_asset(article_key, title, "article", 0, save_path)
+                self.db.update_asset(article_key, title, "article", 0, save_path, source=display_name)
                 self.global_download_count += 1
                 self._report_progress(
                     status="scanning",

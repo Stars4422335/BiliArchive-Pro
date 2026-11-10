@@ -96,7 +96,7 @@ def _scanner_stub(tmp_path, *, existing=(), config=None):
             "records": dict(existing),
             "get_asset": lambda self, k: self.records.get(k),
             "update_last_check": lambda self, k: None,
-            "update_asset": lambda self, k, *a: None,
+            "update_asset": lambda self, k, *a, **kw: None,
         },
     )()
     scanner.global_download_count = 0
@@ -250,7 +250,7 @@ def test_nfo_failure_does_not_record_completion(tmp_path, monkeypatch):
     )()
 
     updates = []
-    scanner.db.update_asset = lambda *a: updates.append(a)
+    scanner.db.update_asset = lambda *a, **kw: updates.append(a)
 
     monkeypatch.setattr(
         "app.scheduler.scanner.MetadataGenerator.process_article_to_md",

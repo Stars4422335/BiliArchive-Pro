@@ -61,6 +61,11 @@ class AssetsMixin:
         item["poster_available"] = self._poster_from_asset_path(item.get("path")) is not None
         return item
 
+    def _has_source_column(self) -> bool:
+        """Old databases (pre v1.9.1) lack the source column; degrade cleanly."""
+        rows = self._database().query("PRAGMA table_info(assets)")
+        return any(row["name"] == "source" for row in rows)
+
     def assets(
         self,
         *,
@@ -70,9 +75,11 @@ class AssetsMixin:
         page: int,
         page_size: int,
         cursor: str | None = None,
+        source: str | None = None,
     ) -> dict[str, Any]:
         if page < 1 or page_size < 1 or page_size > 200:
             raise ValueError("page 必须大于 0，page_size 必须在 1 到 200 之间")
+        has_source = self._has_source_column()
         filter_conditions = []
         filter_parameters: list[Any] = []
         if query:
@@ -90,6 +97,13 @@ class AssetsMixin:
                 raise ValueError("type 必须是 video 或 article")
             filter_conditions.append("type=?")
             filter_parameters.append(asset_type)
+        if source:
+            if len(source) > 128:
+                raise ValueError("source 不能超过 128 个字符")
+            if not has_source:
+                raise ValueError("数据库尚未升级（缺少 source 列），请先启动一次核心引擎完成迁移")
+            filter_conditions.append("source=?")
+            filter_parameters.append(source)
 
         row_conditions = list(filter_conditions)
         row_parameters = list(filter_parameters)
@@ -120,8 +134,9 @@ class AssetsMixin:
         total = database.scalar(f"SELECT COUNT(*) FROM assets{filter_where}", filter_parameters)
 
         # 多取一行用来判断还有没有下一页，返回给调用方的仍然只有 page_size 条。
+        source_column = "source" if has_source else "NULL AS source"
         rows = database.query(
-            "SELECT bvid, title, type, status, path, last_check, p_count "
+            f"SELECT bvid, title, type, status, path, last_check, p_count, {source_column} "
             f"FROM assets{rows_where} ORDER BY last_check DESC, bvid LIMIT ? OFFSET ?",
             [*row_parameters, page_size + 1, offset_value],
         )
@@ -149,6 +164,50 @@ class AssetsMixin:
         if value not in {0, 1, 2}:
             raise ValueError("status 必须是 active、tombstoned、protected 或 0、1、2")
         return value
+
+    def distinct_sources(self) -> list[dict[str, Any]]:
+        """Source names seen in the database, for the asset filter dropdown.
+
+        The count helps the operator spot a source whose assets vanished
+        (a non-zero count is also the upgrade safety signal: the number
+        never drops after a migration). On a pre-1.9.1 database the source
+        column does not exist yet; derive names from the stored path so the
+        dropdown still works before the daemon's first migration run.
+        """
+        database = self._database()
+        if not self._has_source_column():
+            rows = database.query(
+                "SELECT path FROM assets WHERE path IS NOT NULL AND path != ''"
+            )
+            counts: dict[str, int] = {}
+            for row in rows:
+                source = self._derive_source_from_path(row["path"])
+                if source:
+                    counts[source] = counts.get(source, 0) + 1
+            return [
+                {"source": name, "count": count}
+                for name, count in sorted(counts.items())
+            ]
+        rows = database.query(
+            "SELECT source, COUNT(*) AS asset_count FROM assets "
+            "WHERE source IS NOT NULL AND source != '' "
+            "GROUP BY source ORDER BY source"
+        )
+        return [
+            {"source": row["source"], "count": row["asset_count"]}
+            for row in rows
+        ]
+
+    @staticmethod
+    def _derive_source_from_path(path_text: Any) -> str | None:
+        if not path_text:
+            return None
+        normalized = str(path_text).replace("\\", "/")
+        parts = [p for p in normalized.split("/") if p and p != "."]
+        for index, part in enumerate(parts):
+            if part.lower() == "downloads" and index + 1 < len(parts):
+                return parts[index + 1]
+        return None
 
     def poster_path(self, asset_id: str) -> Path | None:
         rows = self._database().query("SELECT path FROM assets WHERE bvid=?", [asset_id])

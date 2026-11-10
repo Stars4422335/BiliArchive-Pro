@@ -68,13 +68,13 @@ class FollowingMixin:
                             tomb_path,
                             status="Tombstoned",
                         ):
-                            self.db.update_asset(db_key, "已失效视频", "unknown", 1, tomb_path)
+                            self.db.update_asset(db_key, "已失效视频", "unknown", 1, tomb_path, source=display_name)
                         else:
                             print(f"[-] 墓碑 NFO 写入失败，未记录完成状态: {db_key}")
                     elif local_record['status'] == 0:
                         print(f"[!] 警告触发：投稿源端已失效，启动孤本保护: {local_record['title']}")
                         new_path = self.path_mgr.mark_as_deleted(local_record['path'], self.config['archive_protection']['mark_deleted_prefix'])
-                        self.db.update_asset(db_key, local_record['title'], local_record['type'], 2, new_path)
+                        self.db.update_asset(db_key, local_record['title'], local_record['type'], 2, new_path, source=display_name)
                     continue
 
                 # 【情况B：正常投稿处理】
@@ -90,7 +90,7 @@ class FollowingMixin:
 
                 if download_result:
                     save_path, p_count = download_result
-                    self.db.update_asset(db_key, title, "video", 0, save_path, p_count)
+                    self.db.update_asset(db_key, title, "video", 0, save_path, p_count, source=display_name)
                     self.global_download_count += 1
                     self._report_progress(
                         status="scanning",

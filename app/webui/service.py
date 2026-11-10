@@ -116,6 +116,63 @@ class WebService(
             raise command_error("命令不存在", status=404)
         return record
 
+    # ---------- bilibili discovery (needs login credentials) ----------
+
+    _credential_cache: dict[str, Any] = {"credential": None, "uid": 0, "loaded_at": 0.0}
+
+    async def _login_credential(self, ttl_seconds: float = 300.0):
+        """Load and verify the Bilibili credential, cached briefly.
+
+        Discovery endpoints need the login cookie; the daemon owns the
+        long-lived session but the WebUI process can read the same
+        ``cookie.json`` read-only.
+        """
+        import time
+
+        from app.core.auth import check_cookie
+
+        cache = self._credential_cache
+        now = time.time()
+        if cache["credential"] is not None and now - cache["loaded_at"] < ttl_seconds:
+            return cache["credential"], cache["uid"]
+        cookie_path = self.load_raw_config().get("system", {}).get("cookie_path")
+        if not cookie_path:
+            raise command_error("配置中缺少 cookie_path", status=503)
+        credential, uid = await check_cookie(cookie_path)
+        if not credential:
+            raise command_error("登录凭据不可用，请先完成扫码登录", status=503)
+        cache["credential"] = credential
+        cache["uid"] = uid
+        cache["loaded_at"] = now
+        return credential, uid
+
+    async def discover_favorites(self) -> dict[str, Any]:
+        """全部视频收藏夹（名称 + id + 数量），供设置页自动填充。"""
+        from app.core.parser import BiliParser
+        from app.core.parser import SyncFetchError
+
+        credential, uid = await self._login_credential()
+        parser = BiliParser(credential, uid=uid)
+        try:
+            favorites = await parser.get_user_favorite_lists()
+        except SyncFetchError as exc:
+            raise command_error(f"获取收藏夹失败: {exc}", status=503) from exc
+        return {"favorites": favorites}
+
+    async def discover_collections(self, mid: int | None = None) -> dict[str, Any]:
+        """指定 UP 主（缺省登录账号）的全部合集/系列。"""
+        from app.core.parser import BiliParser
+        from app.core.parser import SyncFetchError
+
+        credential, uid = await self._login_credential()
+        target = int(mid) if mid else uid
+        parser = BiliParser(credential, uid=uid)
+        try:
+            collections = await parser.get_user_collections(target)
+        except SyncFetchError as exc:
+            raise command_error(f"获取合集失败: {exc}", status=503) from exc
+        return {"collections": collections}
+
 
 __all__ = [
     "CONFIG_SCHEMA",

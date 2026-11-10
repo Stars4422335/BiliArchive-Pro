@@ -193,6 +193,53 @@ class BiliParser:
 
         return await self._fetch_with_retry(label, fetch)
 
+    async def get_user_collections(self, mid=None):
+        """获取指定 UP 主的全部合集与系列列表。
+
+        返回 ``[{"id", "mid", "name"}]``，字段与 ``sync_collections``
+        配置行一一对应，可直接写入配置或供 WebUI 自动发现使用。
+        ``mid`` 缺省时使用登录账号自己的 UID。
+        """
+        from bilibili_api import user as bili_user
+
+        target_mid = int(mid) if mid else self.uid
+        if not target_mid:
+            print("[-] 错误：未提供 UP 主 UID，无法获取合集列表")
+            return []
+
+        label = f"获取 UP 主 {target_mid} 的合集列表"
+        print(f"[*] 正在{label}...")
+
+        async def fetch():
+            user = bili_user.User(uid=target_mid, credential=self.credential)
+            channels = await user.get_channels()
+            if not isinstance(channels, dict):
+                raise ValueError("合集列表返回结构无效")
+            parsed = []
+            for category in ("seasons_list", "series_list"):
+                items = channels.get(category) or []
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    meta = item.get("meta") or {}
+                    channel_id = meta.get("season_id") or meta.get("series_id")
+                    name = meta.get("name")
+                    if not channel_id or not name:
+                        continue
+                    parsed.append(
+                        {
+                            "id": int(channel_id),
+                            "mid": int(target_mid),
+                            "name": str(name),
+                            "total": meta.get("total", item.get("total", 0)),
+                            "category": "season" if category == "seasons_list" else "series",
+                        }
+                    )
+            print(f"[+] 成功获取 {len(parsed)} 个合集/系列")
+            return parsed
+
+        return await self._fetch_with_retry(label, fetch)
+
     async def get_watch_later_list(self):
         """拉取稍后再看列表的内容"""
         label = "拉取稍后再看列表"

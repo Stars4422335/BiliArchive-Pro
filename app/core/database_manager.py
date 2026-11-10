@@ -5,7 +5,7 @@ from datetime import datetime
 
 
 class DatabaseManager:
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 2
     _MIGRATABLE_COLUMNS = {
         "title": "TEXT",
         "type": "TEXT",
@@ -16,6 +16,8 @@ class DatabaseManager:
         # F3 完整性巡检：0=未校验 1=通过 2=损坏
         "integrity_status": "INTEGER NOT NULL DEFAULT 0",
         "last_verify": "TEXT",
+        # v1.9.1 来源筛选：收藏夹/合集名称；仅新增列，绝不动现有行。
+        "source": "TEXT",
     }
 
     #: 面向真实查询的索引（万级资产实测后保留的只有这两个）。
@@ -110,6 +112,7 @@ class DatabaseManager:
                     )
 
             self._repair_legacy_rows()
+            self._backfill_source_from_path()
             self._ensure_bvid_unique(columns)
             # 索引必须在列迁移与旧行修复之后创建：
             # last_verify / integrity_status 是 v1.5.0 才补的列，
@@ -241,23 +244,63 @@ class DatabaseManager:
             }
         return None
 
-    def update_asset(self, bvid, title, asset_type, status, path, p_count=1):
+    def _backfill_source_from_path(self):
+        """为存量资产行补全 source（v1.9.1 新增列）。
+
+        只处理 source IS NULL 且 path 非空的行：来源名 = path 中
+        ``downloads/`` 之后的第一级目录名。解析不出来源的行保持 NULL，
+        绝不删除、改写或重置任何现有字段——这是升级无损约束的一部分。
+        """
+        rows = self.conn.execute(
+            "SELECT bvid, path FROM assets WHERE source IS NULL AND path IS NOT NULL AND path != ''"
+        ).fetchall()
+        updated = 0
+        for bvid, path_text in rows:
+            source = self._source_from_asset_path(path_text)
+            if not source:
+                continue
+            self.conn.execute(
+                "UPDATE assets SET source=? WHERE bvid=? AND source IS NULL",
+                (source, bvid),
+            )
+            updated += 1
+        if updated:
+            print(f"[*] 已为 {updated} 条存量资产补全来源信息（source 列）")
+
+    @staticmethod
+    def _source_from_asset_path(path_text):
+        """从资产路径解析来源目录名。
+
+        兼容 ``./downloads/<source>/<title> [BV]`` 与绝对路径；路径分隔符
+        同时接受 ``/`` 与 ``\\``。找不到 downloads 段时返回 None。
+        """
+        if not path_text:
+            return None
+        normalized = str(path_text).replace("\\", "/")
+        parts = [p for p in normalized.split("/") if p and p != "."]
+        for index, part in enumerate(parts):
+            if part.lower() == "downloads" and index + 1 < len(parts):
+                return parts[index + 1]
+        return None
+
+    def update_asset(self, bvid, title, asset_type, status, path, p_count=1, source=None):
         asset_key = self._validate_asset_key(bvid)
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with self.conn:
             self.conn.execute(
                 """
-                INSERT INTO assets (bvid, title, type, status, path, last_check, p_count)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO assets (bvid, title, type, status, path, last_check, p_count, source)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(bvid) DO UPDATE SET
                     title=excluded.title,
                     type=excluded.type,
                     status=excluded.status,
                     path=excluded.path,
                     last_check=excluded.last_check,
-                    p_count=excluded.p_count
+                    p_count=excluded.p_count,
+                    source=COALESCE(excluded.source, assets.source)
                 """,
-                (asset_key, title, asset_type, status, path, now, p_count),
+                (asset_key, title, asset_type, status, path, now, p_count, source),
             )
 
     def update_last_check(self, bvid):

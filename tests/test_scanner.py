@@ -72,7 +72,7 @@ class RecordingDatabase:
     def get_asset(self, key):
         return self.records.get(key)
 
-    def update_asset(self, key, title, asset_type, status, path, p_count=1):
+    def update_asset(self, key, title, asset_type, status, path, p_count=1, source=None):
         record = {
             "bvid": key,
             "title": title,
@@ -81,6 +81,7 @@ class RecordingDatabase:
             "path": path,
             "last_check": None,
             "p_count": p_count,
+            "source": source,
         }
         self.records[key] = record
         self.writes.append(key)
