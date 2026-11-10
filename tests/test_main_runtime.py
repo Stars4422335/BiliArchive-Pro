@@ -11,8 +11,10 @@ class DummyScanner:
     max_global_downloads = 0
     global_download_count = 0
 
-    def __init__(self, config, cred, db, path_mgr, uid=None):
+    def __init__(self, config, cred, db, path_mgr, uid=None, config_path=None):
         self.parser = self
+        self.config = config
+        self.config_path = config_path
 
     async def get_user_favorite_lists(self):
         return []

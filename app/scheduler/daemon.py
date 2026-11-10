@@ -89,7 +89,39 @@ async def _run_source_scan(label, operation):
         return False
 
 
-async def daemon_loop(config, cred, uid):
+async def _resolve_target_favs(scanner, runtime):
+    """每轮扫描前解析收藏夹来源列表。
+
+    配置中显式列出时直接使用；为空时回退到账号收藏夹自动发现
+    （守护环境无交互，直接全量备份）。返回空列表表示本轮无法扫描。
+    """
+    target_favs = scanner.config.get('favorites', [])
+    if target_favs:
+        print(f"[*] 使用配置中指定的 {len(target_favs)} 个收藏夹")
+        return target_favs
+    update_runtime(
+        runtime,
+        status="scanning",
+        phase="favorite_discovery",
+        message="正在读取账号收藏夹列表",
+        next_scan_at=None,
+    )
+    print("[*] 配置文件中未指定收藏夹，正在自动获取您的收藏夹列表...")
+    try:
+        target_favs = await scanner.parser.get_user_favorite_lists()
+    except SyncFetchError as exc:
+        print(f"[-] 自动获取收藏夹列表失败: {exc}")
+        print("[!] 本次未将读取失败当作空收藏夹，请稍后重试。")
+        return []
+    if not target_favs:
+        print("[-] 错误：无法获取收藏夹列表！")
+        print("[!] 可能原因：登录凭证已过期，或账号没有创建收藏夹。")
+        return []
+    print(f"[*] 发现 {len(target_favs)} 个收藏夹，将自动备份所有收藏夹（非交互环境）")
+    return target_favs
+
+
+async def daemon_loop(config, cred, uid, config_path=None):
     """主循环守护进程"""
     print(f"\n=== 🚀 BiliArchive-Pro v{__version__} 核心引擎启动 ===")
 
@@ -171,9 +203,9 @@ async def daemon_loop(config, cred, uid):
                 pass
 
 
-async def _run_scan_loop(config, cred, uid, db, runtime=None):
+async def _run_scan_loop(config, cred, uid, db, runtime=None, config_path=None):
     path_mgr = PathManager(config['system']['download_path'], config['system']['plex_mode'])
-    scanner = FavScanner(config, cred, db, path_mgr, uid=uid)
+    scanner = FavScanner(config, cred, db, path_mgr, uid=uid, config_path=config_path)
     if runtime is not None and hasattr(scanner, "set_progress_callback"):
         scanner.set_progress_callback(runtime.update)
 
@@ -185,52 +217,13 @@ async def _run_scan_loop(config, cred, uid, db, runtime=None):
         channel = None
     pending_scan = asyncio.Event()
 
-    # 从配置文件读取收藏夹列表
-    target_favs = config.get('favorites', [])
-
-    # 如果配置文件中没有收藏夹，尝试自动获取
-    if not target_favs:
-        update_runtime(
-            runtime,
-            status="scanning",
-            phase="favorite_discovery",
-            message="正在读取账号收藏夹列表",
-            next_scan_at=None,
-        )
-        print("[*] 配置文件中未指定收藏夹，正在自动获取您的收藏夹列表...")
-        try:
-            target_favs = await scanner.parser.get_user_favorite_lists()
-        except SyncFetchError as exc:
-            print(f"[-] 自动获取收藏夹列表失败: {exc}")
-            print("[!] 本次未将读取失败当作空收藏夹，请稍后重试。")
-            return
-
-        if not target_favs:
-            print("[-] 错误：无法获取收藏夹列表！")
-            print("[!] 可能原因：")
-            print("    1. 登录凭证已过期")
-            print("    2. 账号没有创建收藏夹")
-            print("[!] 建议：")
-            print("    1. 重新运行 python login.py 登录")
-            print("    2. 或在 config.yaml 中手动添加 favorites 配置")
-            return
-
-        print(f"[*] 发现 {len(target_favs)} 个收藏夹，将自动备份所有收藏夹")
-        # 询问用户是否继续
-        try:
-            confirm = input("\n是否备份所有收藏夹? (Y/n): ").strip().lower()
-            if confirm == 'n':
-                print("[!] 已取消，请在 config.yaml 中手动指定要备份的收藏夹")
-                return
-        except EOFError:
-            # 非交互式环境，自动继续
-            print("[*] 非交互式环境，自动备份所有收藏夹...")
-    else:
-        print(f"[*] 使用配置文件中指定的 {len(target_favs)} 个收藏夹")
+    # 收藏夹列表每轮从 config 读取（不再做启动快照），
+    # 这样 reload_config 热重载后下一轮立即使用新的来源列表。
 
     while True:
-        # 轮次开始前消费命令：让 redownload_asset 在本轮巡检即命中
+        # 轮次开始前消费命令：让 reload_config / redownload_asset 在本轮即生效
         await dispatch_commands(channel, scanner, runtime, pending_scan)
+        target_favs = await _resolve_target_favs(scanner, runtime)
         update_runtime(
             runtime,
             status="scanning",
@@ -264,7 +257,7 @@ async def _run_scan_loop(config, cred, uid, db, runtime=None):
                 break
 
         # 接续处理稍后再看
-        if config.get('system', {}).get('sync_watch_later', False):
+        if scanner.config.get('system', {}).get('sync_watch_later', False):
             if not scanner.max_global_downloads or scanner.global_download_count < scanner.max_global_downloads:
                 label = "稍后再看"
                 update_runtime(
@@ -280,7 +273,7 @@ async def _run_scan_loop(config, cred, uid, db, runtime=None):
                     incomplete_sources.append(label)
 
         # 接续处理合集
-        sync_collections = config.get('sync_collections', [])
+        sync_collections = scanner.config.get('sync_collections', [])
         if sync_collections:
             for coll in sync_collections:
                 if scanner.max_global_downloads and scanner.global_download_count >= scanner.max_global_downloads:
@@ -329,7 +322,7 @@ async def _run_scan_loop(config, cred, uid, db, runtime=None):
                     incomplete_sources.append(label)
 
         # 接续处理关注 UP 主投稿
-        followings_config = config.get('followings') or {}
+        followings_config = scanner.config.get('followings') or {}
         followings_mode = str(followings_config.get('mode', 'off')).strip().lower()
         if followings_config and followings_mode != 'off':
             known_names = {}
@@ -426,7 +419,7 @@ async def _run_scan_loop(config, cred, uid, db, runtime=None):
                         incomplete_sources.append(label)
 
         # 接续同步观看历史（仅记元数据，不下载视频本体——用户已拍板）
-        if config.get('system', {}).get('sync_watch_history', False):
+        if scanner.config.get('system', {}).get('sync_watch_history', False):
             if not scanner.max_global_downloads or scanner.global_download_count < scanner.max_global_downloads:
                 label = "观看历史"
                 update_runtime(
@@ -471,7 +464,7 @@ async def _run_scan_loop(config, cred, uid, db, runtime=None):
             print("\n[+] 达到指定下载数量，任务完毕，安全退出。")
             break
 
-        scan_interval = config.get('system', {}).get('scan_interval_seconds', 21600)
+        scan_interval = scanner.config.get('system', {}).get('scan_interval_seconds', 21600)
         if incomplete_sources:
             failed_labels = "、".join(incomplete_sources)
             runtime_message = f"本轮扫描不完整：{failed_labels}"

@@ -7,20 +7,29 @@ export const emptyConfig = {
     download_timeout_seconds: 7200,
     plex_mode: true,
     sync_watch_later: false,
+    sync_watch_history: false,
+    max_history_days: 90,
+    db_wal: false,
+    verify_integrity: "light",
+    check_update_on_start: false,
   },
   network: {
     request_timeout_seconds: 30,
     sync_retry_attempts: 3,
     sync_retry_backoff_seconds: 2,
+    github_proxy_url: "",
   },
   components: {
-    "yt-dlp": { strategy: "auto" },
-    ffmpeg: { strategy: "notify" },
+    "yt-dlp": { strategy: "auto", path: "" },
+    ffmpeg: { strategy: "notify", path: "" },
   },
   archive_protection: {
     mark_deleted_prefix: "[源端已删]",
     tombstone_prefix: "[失效墓碑]",
   },
+  followings: { mode: "off", article_types: "off", list: [] },
+  wordcloud: { enabled: false, max_terms: 60 },
+  summary: { enabled: false, mode: "local", max_chars: 220 },
   favorites: [],
   sync_collections: [],
 };
@@ -101,6 +110,7 @@ export function normalizeConfig(payload) {
   const data = envelope.config || payload?.data || payload || {};
   return {
     revision: envelope.revision || payload?.revision || "",
+    effects: payload?.effects || data.effects || null,
     system: { ...emptyConfig.system, ...(data.system || {}) },
     network: { ...emptyConfig.network, ...(data.network || {}) },
     components: {
@@ -111,6 +121,13 @@ export function normalizeConfig(payload) {
       ...emptyConfig.archive_protection,
       ...(data.archive_protection || {}),
     },
+    followings: {
+      ...emptyConfig.followings,
+      ...(data.followings || {}),
+      list: Array.isArray(data.followings?.list) ? data.followings.list : [],
+    },
+    wordcloud: { ...emptyConfig.wordcloud, ...(data.wordcloud || {}) },
+    summary: { ...emptyConfig.summary, ...(data.summary || {}) },
     favorites: Array.isArray(data.favorites) ? data.favorites : [],
     sync_collections: Array.isArray(data.sync_collections) ? data.sync_collections : [],
   };

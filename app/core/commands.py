@@ -26,8 +26,9 @@ from app.core.secure_file import atomic_write_text
 COMMAND_TRIGGER_SCAN = "trigger_scan"
 COMMAND_RESTART = "restart"
 COMMAND_REDOWNLOAD_ASSET = "redownload_asset"
+COMMAND_RELOAD_CONFIG = "reload_config"
 
-SUPPORTED_COMMANDS = (COMMAND_TRIGGER_SCAN, COMMAND_RESTART, COMMAND_REDOWNLOAD_ASSET)
+SUPPORTED_COMMANDS = (COMMAND_TRIGGER_SCAN, COMMAND_RESTART, COMMAND_REDOWNLOAD_ASSET, COMMAND_RELOAD_CONFIG)
 
 #: Commands that must never be dispatched, even if the file is hand-edited.
 #: Deleting local media stays a manual, out-of-band operation by design.
@@ -353,6 +354,19 @@ async def dispatch_commands(channel, scanner, runtime, pending_scan=None) -> boo
                 print("[!] 已收到重启指令：请在当前轮次结束后重启核心进程。")
                 channel.complete(command, ok=True, result="已提示运维层重启核心进程")
                 return True
+            if name == COMMAND_RELOAD_CONFIG:
+                reloaded = scanner.reload_config()
+                if reloaded:
+                    print("[*] 已重新加载配置：来源列表与运行参数即时生效。")
+                    channel.complete(
+                        command,
+                        ok=True,
+                        result="配置已热重载（重启类参数仍需重启进程）",
+                    )
+                else:
+                    print("[!] 配置热重载失败，继续使用当前配置。")
+                    channel.complete(command, ok=False, result="配置重载失败，保留当前配置")
+                continue
             raise CommandError(f"不支持的命令: {name}")
         except CommandError as exc:
             print(f"[-] 命令执行失败: {exc}")
@@ -365,6 +379,7 @@ async def dispatch_commands(channel, scanner, runtime, pending_scan=None) -> boo
 
 __all__ = [
     "COMMAND_REDOWNLOAD_ASSET",
+    "COMMAND_RELOAD_CONFIG",
     "COMMAND_RESTART",
     "COMMAND_TRIGGER_SCAN",
     "CommandChannel",

@@ -85,7 +85,7 @@ def main():
             _mark_core_stopped(config, "核心引擎未启动：登录凭据不可用")
             raise SystemExit(1)
 
-        daemon_task = loop.create_task(daemon_loop(config, cred, uid))
+        daemon_task = loop.create_task(daemon_loop(config, cred, uid, config_path="config.yaml"))
         loop.run_until_complete(daemon_task)
     except KeyboardInterrupt:
         print("\n[+] 接收到 Ctrl+C，正在安全关闭数据库与下载任务...")

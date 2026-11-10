@@ -40,8 +40,9 @@ class FavScanner(
     ScannerBase,
 ):
 
-    def __init__(self, config, credential, db, path_mgr, uid=None):
+    def __init__(self, config, credential, db, path_mgr, uid=None, config_path=None):
         self.config = config
+        self.config_path = config_path
         network_config = config.get("network", {})
         self.parser = BiliParser(
             credential,
@@ -69,3 +70,46 @@ class FavScanner(
 
     def set_progress_callback(self, callback):
         self._progress_callback = callback if callable(callback) else None
+
+    def reload_config(self) -> bool:
+        """Re-read the on-disk config and refresh the parameters that can
+        change without a restart (sources list, scan limits, network
+        boundaries, archive prefixes, wordcloud/summary switches).
+
+        Restart-only keys (download_path, plex_mode, verify_integrity,
+        component paths, proxy) intentionally keep their original values:
+        they were baked into long-lived objects at construction time.
+        Returns True when the file was read and applied.
+        """
+        if not self.config_path:
+            # 不知配置路径时无从重读（测试或内嵌部署），明确失败而非假成功。
+            return False
+        try:
+            from app.core.config_manager import load_config
+
+            fresh = load_config(self.config_path)
+        except Exception as exc:
+            print(f"[-] 配置热重载失败: {exc}")
+            return False
+        if not isinstance(fresh, dict) or "system" not in fresh:
+            return False
+        self.config = fresh
+        network = fresh.get("network", {})
+        parser = self.parser
+        parser.retry_attempts = network.get("sync_retry_attempts", parser.retry_attempts)
+        parser.retry_backoff_seconds = network.get(
+            "sync_retry_backoff_seconds", parser.retry_backoff_seconds
+        )
+        parser.request_timeout_seconds = network.get(
+            "request_timeout_seconds", parser.request_timeout_seconds
+        )
+        # download_timeout 是每次下载时从 downloader 读的即时参数，可以热更。
+        self.downloader.download_timeout_seconds = (
+            self.downloader._normalize_download_timeout(
+                fresh.get("system", {}).get("download_timeout_seconds", 7200)
+            )
+        )
+        self.max_global_downloads = fresh.get("system", {}).get(
+            "max_downloads_per_run", self.max_global_downloads
+        )
+        return True
