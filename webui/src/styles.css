@@ -226,6 +226,19 @@ tbody tr:last-child td { border-bottom: 0; }
 .password-dialog .auth-form { margin-top: 12px; }
 .discover-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
 .discover-mid-input { width: 220px; height: 36px; padding: 0 11px; color: var(--text); background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius); font-size: 13px; }
+.qr-login-layout { display: flex; align-items: flex-start; gap: 24px; flex-wrap: wrap; }
+.qr-image { width: 200px; height: 200px; object-fit: contain; padding: 8px; background: #fff; border: 1px solid var(--line); border-radius: var(--radius); }
+.qr-placeholder { width: 200px; height: 200px; display: grid; place-items: center; color: var(--muted); font-size: 13px; background: var(--bg); border: 1px dashed var(--line-strong); border-radius: var(--radius); }
+.qr-side { display: grid; gap: 12px; align-content: start; }
+.qr-message { display: inline-flex; align-items: center; gap: 8px; margin: 0; padding: 10px 14px; font-size: 13px; border-radius: var(--radius); }
+.qr-message.state-success { color: #116e3d; background: #e2f7ea; }
+.qr-message.state-danger { color: #a32842; background: #ffe9ef; }
+.qr-message.state-warning { color: #8a5a00; background: #fdf1d6; }
+.qr-message.state-neutral { color: var(--muted); background: var(--bg); }
+.account-status { margin: 0; }
+.account-status div { display: grid; gap: 3px; }
+.account-status span { color: var(--muted); font-size: 12px; }
+
 
 .effect-badge { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 700; vertical-align: middle; }
 .effect-badge.effect-immediate { color: #116e3d; background: #e2f7ea; }

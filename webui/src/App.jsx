@@ -5,6 +5,7 @@ import { configPayload, normalizeAssets, normalizeConfig, normalizeDashboard } f
 import { PasswordChangeDialog, TokenGate } from "./components/ui";
 import OverviewView from "./views/OverviewView";
 import AssetsView from "./views/AssetsView";
+import AccountView from "./views/AccountView";
 import OperationsView from "./views/OperationsView";
 import SettingsView from "./views/SettingsView";
 
@@ -137,6 +138,7 @@ export default function App() {
   return <AppShell activeView={activeView} onNavigate={setActiveView} onChangePassword={() => { setPasswordError(""); setPasswordDialogOpen(true); }}>
     {activeView === "overview" && <OverviewView dashboard={data.dashboard} loading={loading.dashboard} error={errors.dashboard} onRetry={loadCoreData} onRefresh={loadCoreData} onOpenAssets={() => setActiveView("assets")} />}
     {activeView === "assets" && <AssetsView assets={data.assets} loading={loading.assets} error={errors.assets} onLoad={loadAssets} />}
+    {activeView === "account" && <AccountView requireAuthentication={requireAuthentication} />}
     {activeView === "operations" && <OperationsView requireAuthentication={requireAuthentication} />}
     {activeView === "settings" && <SettingsView config={data.config} loading={loading.config} error={errors.config} onRetry={loadCoreData} onSave={handleConfigSave} />}
     {(passwordDialogOpen || forceChange) && <PasswordChangeDialog required={forceChange} onSubmit={handlePasswordChange} onClose={forceChange ? undefined : () => { setPasswordDialogOpen(false); setPasswordError(""); }} error={passwordError} />}

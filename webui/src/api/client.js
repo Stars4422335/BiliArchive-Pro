@@ -64,6 +64,9 @@ export const api = {
   getAssetSources: () => request("/api/assets/sources"),
   getDiscoverFavorites: () => request("/api/discover/favorites"),
   getDiscoverCollections: (mid) => request(`/api/discover/collections${mid ? `?mid=${encodeURIComponent(mid)}` : ""}`),
+  createLoginQrcode: () => request("/api/login/qrcode", { method: "POST" }),
+  getLoginQrcodeStatus: (key) => request(`/api/login/qrcode/${encodeURIComponent(key)}`),
+  getLoginStatus: () => request("/api/login/status"),
   getDashboard: () => request("/api/dashboard"),
   getAssets: (parameters = {}) => {
     const search = new URLSearchParams();

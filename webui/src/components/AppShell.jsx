@@ -1,8 +1,9 @@
-import { Archive, Boxes, KeyRound, LayoutDashboard, Settings, ShieldCheck, Terminal } from "lucide-react";
+import { Archive, Boxes, KeyRound, LayoutDashboard, Settings, ShieldCheck, Terminal, UserRound } from "lucide-react";
 
 const navItems = [
   { id: "overview", label: "概览", icon: LayoutDashboard },
   { id: "assets", label: "资产", icon: Boxes },
+  { id: "account", label: "账号", icon: UserRound },
   { id: "operations", label: "操作", icon: Terminal },
   { id: "settings", label: "设置", icon: Settings },
 ];
