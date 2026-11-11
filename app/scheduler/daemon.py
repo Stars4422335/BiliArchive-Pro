@@ -89,6 +89,78 @@ async def _run_source_scan(label, operation):
         return False
 
 
+def _file_mtime(path):
+    """cookie 文件的修改时间；路径无效或文件不存在返回 None。"""
+    import os
+
+    if not path:
+        return None
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return None
+
+
+LOGIN_WAIT_POLL_SECONDS = 30
+
+
+async def _ensure_credential(config, cred, uid, cookie_path, cookie_mtime,
+                             db, path_mgr, runtime, config_path,
+                             channel, pending_scan, scanner):
+    """每轮扫描前的凭据守卫。
+
+    三种情形：
+    1. 已有凭据且 cookie 文件未变化 → 原样返回，不额外验证（B 站不骚扰）。
+    2. cookie 文件 mtime 变化（WebUI 扫码写入了新凭据）→ 重新校验，
+       成功则重建 scanner；失败沿用旧凭据继续（文件写入可能是中间态）。
+    3. 无凭据（等待登录）→ 进入 waiting_login 休眠：短间隔轮询文件变化
+       与命令通道，扫码写入后立即恢复；休眠期间 runtime 明确提示扫码。
+    """
+    from app.core.auth import check_cookie
+
+    if cred is None or cookie_mtime != _file_mtime(cookie_path):
+        if cred is None:
+            update_runtime(
+                runtime,
+                status="scanning",
+                phase="waiting_login",
+                source=None,
+                current_title=None,
+                current_asset=None,
+                message="等待扫码登录：请打开 WebUI「账号」页扫码",
+                next_scan_at=None,
+            )
+            print("[*] 未登录：等待 WebUI「账号」页扫码登录（每 30 秒检查一次）...")
+        else:
+            print("[*] 检测到登录凭据文件已更新，正在重新校验...")
+        new_cred, new_uid = await check_cookie(cookie_path)
+        if new_cred is not None:
+            if cred is None:
+                print(f"[+] 登录成功（UID {new_uid}），核心引擎开始工作。")
+            else:
+                print("[+] 新凭据校验通过，已热替换。")
+            scanner = FavScanner(config, new_cred, db, path_mgr, uid=new_uid,
+                                 config_path=config_path)
+            if runtime is not None and hasattr(scanner, "set_progress_callback"):
+                scanner.set_progress_callback(runtime.update)
+            return new_cred, new_uid, scanner
+        if cred is not None:
+            # 文件变化但校验失败（写入中间态/损坏）：保留旧凭据，下轮再试。
+            print("[!] 新凭据校验未通过，沿用当前凭据继续。")
+            return cred, uid, scanner
+        # 仍未登录：分片等待 cookie 文件变化，期间保持命令通道可响应。
+        while True:
+            should_exit = await dispatch_commands(channel, None, runtime, pending_scan)
+            if should_exit:
+                raise RestartRequested
+            if _file_mtime(cookie_path) != cookie_mtime or pending_scan.is_set():
+                pending_scan.clear()
+                break
+            await asyncio.sleep(LOGIN_WAIT_POLL_SECONDS)
+        return cred, uid, None if cred is None else scanner
+    return cred, uid, scanner
+
+
 async def _resolve_target_favs(scanner, runtime):
     """每轮扫描前解析收藏夹来源列表。
 
@@ -205,6 +277,8 @@ async def daemon_loop(config, cred, uid, config_path=None):
 
 async def _run_scan_loop(config, cred, uid, db, runtime=None, config_path=None):
     path_mgr = PathManager(config['system']['download_path'], config['system']['plex_mode'])
+    cookie_path = config['system'].get('cookie_path')
+    cookie_mtime = _file_mtime(cookie_path)
     scanner = FavScanner(config, cred, db, path_mgr, uid=uid, config_path=config_path)
     if runtime is not None and hasattr(scanner, "set_progress_callback"):
         scanner.set_progress_callback(runtime.update)
@@ -217,10 +291,18 @@ async def _run_scan_loop(config, cred, uid, db, runtime=None, config_path=None):
         channel = None
     pending_scan = asyncio.Event()
 
-    # 收藏夹列表每轮从 config 读取（不再做启动快照），
-    # 这样 reload_config 热重载后下一轮立即使用新的来源列表。
-
     while True:
+        # 凭据守卫：启动时没有凭据（等待 WebUI 扫码）或凭据文件已被
+        # WebUI 扫码更新时，就地重新校验并重建 scanner；失败则等待。
+        cred, uid, scanner = await _ensure_credential(
+            config, cred, uid, cookie_path, cookie_mtime, db, path_mgr,
+            runtime, config_path, channel, pending_scan, scanner,
+        )
+        cookie_mtime = _file_mtime(cookie_path)
+        if scanner is None:
+            # waiting_login 期间 cookie 文件发生变化：回到循环顶部重新
+            # 校验新凭据（_ensure_credential 会读到新 mtime 并尝试恢复）。
+            continue
         # 轮次开始前消费命令：让 reload_config / redownload_asset 在本轮即生效
         await dispatch_commands(channel, scanner, runtime, pending_scan)
         target_favs = await _resolve_target_favs(scanner, runtime)
@@ -248,7 +330,7 @@ async def _run_scan_loop(config, cred, uid, db, runtime=None, config_path=None):
             )
             completed = await _run_source_scan(
                 label,
-                lambda fav=fav: scanner.scan_favorite(fav['id'], fav['name']),
+                lambda fav=fav, current_scanner=scanner: current_scanner.scan_favorite(fav['id'], fav['name']),
             )
             if not completed:
                 incomplete_sources.append(label)
@@ -312,7 +394,8 @@ async def _run_scan_loop(config, cred, uid, db, runtime=None, config_path=None):
                     label,
                     lambda collection_id=collection_id,
                     collection_mid=collection_mid,
-                    collection_name=collection_name: scanner.scan_collection(
+                    collection_name=collection_name,
+                    current_scanner=scanner: current_scanner.scan_collection(
                         collection_id,
                         collection_name,
                         collection_mid,
@@ -382,7 +465,7 @@ async def _run_scan_loop(config, cred, uid, db, runtime=None, config_path=None):
                 )
                 completed = await _run_source_scan(
                     label,
-                    lambda follow_mid=follow_mid, follow_name=follow_name: scanner.scan_following(
+                    lambda follow_mid=follow_mid, follow_name=follow_name, current_scanner=scanner: current_scanner.scan_following(
                         follow_mid,
                         follow_name,
                     ),
@@ -410,7 +493,7 @@ async def _run_scan_loop(config, cred, uid, db, runtime=None, config_path=None):
                     )
                     completed = await _run_source_scan(
                         label,
-                        lambda follow_mid=follow_mid, follow_name=follow_name: scanner.scan_following_articles(
+                        lambda follow_mid=follow_mid, follow_name=follow_name, current_scanner=scanner: current_scanner.scan_following_articles(
                             follow_mid,
                             follow_name,
                         ),
@@ -432,7 +515,7 @@ async def _run_scan_loop(config, cred, uid, db, runtime=None, config_path=None):
                 )
                 completed = await _run_source_scan(
                     label,
-                    lambda: scanner.sync_watch_history(),
+                    lambda current_scanner=scanner: current_scanner.sync_watch_history(),
                 )
                 if not completed:
                     incomplete_sources.append(label)
@@ -456,7 +539,7 @@ async def _run_scan_loop(config, cred, uid, db, runtime=None, config_path=None):
                 label,
                 # Bind the verifier explicitly: the lambda would otherwise
                 # close over the loop variable.
-                lambda verifier=verifier: scanner.verify_integrity(verifier),
+                lambda verifier=verifier, current_scanner=scanner: current_scanner.verify_integrity(verifier),
             )
 
         # 如果达到了 limit，则直接退出整个程序

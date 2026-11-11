@@ -29,7 +29,7 @@ from app.core.config_manager import (
     get_local_config_path,
     load_config as _load_config,
 )
-from app.scheduler.daemon import _mark_core_stopped, daemon_loop
+from app.scheduler.daemon import daemon_loop
 from app.scheduler.scanner import FavScanner  # noqa: F401
 
 # 关键：注册 httpx 客户端
@@ -79,11 +79,10 @@ def main():
             check_cookie(config['system']['cookie_path'])
         )
         if not cred:
-            # check_cookie 已经打印了具体原因（未登录 / 凭据失效），
-            # 这里只补一句退出说明，避免用户以为是程序崩溃。
-            print("[!] 核心引擎未启动：请先完成登录后重试。")
-            _mark_core_stopped(config, "核心引擎未启动：登录凭据不可用")
-            raise SystemExit(1)
+            # v1.9.3 起：无有效凭据不再退出——照常启动守护循环，
+            # 循环内每轮检测 cookie 文件，扫码写入后自动恢复。
+            print("[*] 尚未登录或凭据已失效：引擎保持运行，等待 WebUI 扫码登录。")
+            print("[*] 打开 WebUI「账号」页扫码后，引擎将自动恢复备份任务。")
 
         daemon_task = loop.create_task(daemon_loop(config, cred, uid, config_path="config.yaml"))
         loop.run_until_complete(daemon_task)

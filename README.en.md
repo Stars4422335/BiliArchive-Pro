@@ -3,7 +3,7 @@
 > **Back up, sync, and organize your personal Bilibili assets — with a local WebUI**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Release: v1.9.2](https://img.shields.io/badge/release-v1.9.2-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.2)
+[![Release: v1.9.3](https://img.shields.io/badge/release-v1.9.3-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.3)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 
 [简体中文](README.md) | **English**
@@ -342,11 +342,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guide and the a
 
 ---
 
-## 🧾 What's new (v1.9.2)
+## 🧾 What's new (v1.9.3)
 
 See [CHANGELOG.md](CHANGELOG.md) and the [release notes](https://github.com/Stars4422335/BiliArchive-Pro/releases) for details.
 
-- **WebUI "Account" page**: a persistent login-status card (nickname + UID when valid, reason when expired) and a QR-code login card. Scan with the Bilibili mobile app to log in directly on the NAS — credentials are written atomically and the core engine picks them up on the next scan cycle. No more host-machine `login.py` round-trip.
+- **Daemon no longer requires login at startup**: without valid credentials the engine keeps running in a "waiting for QR login" state (visible on the overview page), polling for the credential file every 30 seconds. Scanning in the WebUI "Account" page recovers the backup **without a restart**; mid-run credential expiry no longer causes a container restart loop.
 
 ## ❓ Troubleshooting
 

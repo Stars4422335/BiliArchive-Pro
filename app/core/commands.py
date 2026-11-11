@@ -331,6 +331,8 @@ async def dispatch_commands(channel, scanner, runtime, pending_scan=None) -> boo
                 # 停留在 running 状态而无法被审计或重试。
                 continue
             if name == COMMAND_REDOWNLOAD_ASSET:
+                if scanner is None:
+                    raise CommandError("尚未登录，无法登记重下载；请先在 WebUI 扫码登录")
                 asset_id = payload.get("asset_id")
                 if not asset_id:
                     raise CommandError("redownload_asset 缺少 asset_id")
@@ -355,6 +357,12 @@ async def dispatch_commands(channel, scanner, runtime, pending_scan=None) -> boo
                 channel.complete(command, ok=True, result="已提示运维层重启核心进程")
                 return True
             if name == COMMAND_RELOAD_CONFIG:
+                if scanner is None:
+                    # 等待登录阶段没有 scanner；cookie 文件变化本身就会
+                    # 触发凭据重查，此处直接回执即可。
+                    print("[*] 未登录阶段收到配置重载：将在登录后生效。")
+                    channel.complete(command, ok=True, result="等待登录中，配置将在登录后生效")
+                    continue
                 reloaded = scanner.reload_config()
                 if reloaded:
                     print("[*] 已重新加载配置：来源列表与运行参数即时生效。")

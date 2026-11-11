@@ -3,7 +3,7 @@
 > **带本地 WebUI 的 Bilibili 个人数字资产备份、同步与媒体库整理工具**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Release: v1.9.2](https://img.shields.io/badge/release-v1.9.2-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.2)
+[![Release: v1.9.3](https://img.shields.io/badge/release-v1.9.3-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.3)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 
 **简体中文** | [English](README.en.md)
@@ -374,15 +374,15 @@ cd webui && npm ci && npm run lint && npm test && npm run build
 
 ---
 
-## 🧾 最新改进（v1.9.2）
+## 🧾 最新改进（v1.9.3）
 
 完整版本说明见 [CHANGELOG.md](CHANGELOG.md)，历史版本明细见 [GitHub Releases](https://github.com/Stars4422335/BiliArchive-Pro/releases)。
 
-**WebUI「账号」页：扫码登录 + 登录状态验证**
+**引擎启动逻辑改造：无需先登录即可运行**
 
-- 新增「账号」导航页：顶部常显当前登录状态（有效时展示账号昵称与 UID，失效/未登录给出原因），下方提供扫码登录卡片。
-- 点击「生成登录二维码」，用 B 站手机 App 扫一扫即可在 NAS 上直接完成登录——凭据自动原子写入数据目录，核心引擎下一轮扫描自动接管，彻底摆脱「宿主机跑 login.py 再传文件」的流程。
-- 二维码 3 分钟有效，支持重新生成；页面实时显示 等待扫码 / 已扫码 / 登录成功 / 已过期 状态。
+- 核心引擎启动不再要求先登录：无凭据时保持运行并进入「等待扫码登录」状态（WebUI 概览页与 runtime.json 均可见），每 30 秒检测凭据文件。
+- 在 WebUI「账号」页扫码后引擎**无需重启**即自动校验新凭据并恢复备份；凭据中途失效也不再无限重启容器。
+- 与 v1.9.2 的 WebUI 扫码登录组成完整闭环：NAS 首次部署 → 打开面板 → 扫码 → 自动开始备份。
 
 ## ❓ 常见问题
 

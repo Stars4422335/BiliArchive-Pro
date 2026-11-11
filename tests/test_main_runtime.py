@@ -257,3 +257,80 @@ def test_load_config_rejects_non_mapping_local_config(monkeypatch, tmp_path):
 
     with pytest.raises(ValueError, match="顶层必须是映射结构"):
         main.load_config()
+
+
+# ---------- v1.9.3：无凭据启动 + 扫码后自动恢复 ----------
+
+
+def test_daemon_loop_starts_without_credential_and_recovers(monkeypatch, tmp_path):
+    """无凭据时引擎保持运行（waiting_login），cookie 文件写入后自动恢复扫描。"""
+    import asyncio as aio
+    import json as _json
+
+    cookie_path = tmp_path / "cookie.json"
+    config = base_config()
+    config["system"]["cookie_path"] = str(cookie_path)
+    config["system"]["check_update_on_start"] = False
+    config["system"]["db_path"] = str(tmp_path / "archive.db")
+    config["system"]["scan_interval_seconds"] = 1
+    config["network"] = {"request_timeout_seconds": 30}
+
+    monkeypatch.setattr("app.scheduler.daemon.DatabaseManager", lambda db_path, **_: DummyDatabase())
+    monkeypatch.setattr("app.scheduler.daemon.PathManager", lambda root_path, plex_mode: object())
+    monkeypatch.setattr("app.scheduler.daemon.ComponentUpdater", DummyUpdater)
+    # waiting 轮询与命令轮询零延迟：sleep(0) 让出事件循环即可
+    monkeypatch.setattr("app.scheduler.daemon.LOGIN_WAIT_POLL_SECONDS", 0)
+
+    scan_calls = {"count": 0}
+    rebuilds = {"count": 0}
+    check_calls = {"count": 0}
+
+    class RecoverableScanner(DummyScanner):
+        def __init__(self, config, cred, db, path_mgr, uid=None, config_path=None):
+            super().__init__(config, cred, db, path_mgr, uid=uid, config_path=config_path)
+            self.cred = cred
+            if cred is not None:
+                rebuilds["count"] += 1
+
+        async def scan_favorite(self, fav_id, fav_name):
+            scan_calls["count"] += 1
+            # 扫描成功一轮后：下一轮休眠时抛取消，结束测试
+            raise aio.CancelledError("done")
+
+    monkeypatch.setattr("app.scheduler.daemon.FavScanner", RecoverableScanner)
+
+    state = {"valid": False}
+
+    async def fake_check_cookie(path):
+        check_calls["count"] += 1
+        if state["valid"]:
+            return object(), 42
+        return None, None
+
+    monkeypatch.setattr("app.core.auth.check_cookie", fake_check_cookie)
+
+    # waiting 首次休眠时模拟 WebUI 扫码写入凭据（原子写与 WebUI 行为一致）
+    real_sleep = aio.sleep
+
+    async def write_cookie_during_wait(seconds):
+        if not state["valid"]:
+            state["valid"] = True
+            cookie_path.write_text(_json.dumps({"sessdata": "x"}), encoding="utf-8")
+        await real_sleep(0)
+
+    import types as _types
+
+    partial_asyncio = _types.ModuleType("partial_asyncio")
+
+    def _partial_sleep(seconds=0):
+        return write_cookie_during_wait(seconds)
+
+    partial_asyncio.sleep = _partial_sleep
+    partial_asyncio.__getattr__ = lambda name: getattr(aio, name)
+    monkeypatch.setattr("app.scheduler.daemon.asyncio", partial_asyncio)
+
+    with pytest.raises(aio.CancelledError):
+        aio.run(main.daemon_loop(config, cred=None, uid=0))
+
+    assert rebuilds["count"] >= 1, "扫码写入 cookie 后应重建 scanner"
+    assert scan_calls["count"] >= 1, "恢复后应执行扫描"

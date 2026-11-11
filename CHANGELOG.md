@@ -2,6 +2,15 @@
 
 本文件记录正式发布版本的用户可见变更。版本号遵循语义化版本格式。
 
+## [1.9.3] - 2026-11-11
+
+### 引擎启动逻辑改造：无凭据也可运行，扫码后自动恢复
+
+- 核心引擎启动不再因「登录凭据缺失/失效」退出：引擎照常进入守护循环并写入 `waiting_login` 状态（runtime.json 与 WebUI 概览页均可见），每 30 秒检测登录凭据文件。
+- 在 WebUI「账号」页扫码登录后，凭据文件原子更新，引擎**无需重启**即自动校验新凭据并恢复备份任务（期间收到的配置热重载请求会在登录后生效）。
+- 凭据中途失效（B 站风控/过期）时不再无限重启容器：引擎保持运行、明确提示扫码，扫码后自动恢复；已下载资产与数据库全程不受影响。
+- 等待登录期间 `redownload_asset` 命令明确回执「尚未登录」，`reload_config` 回执「登录后生效」。
+
 ## [1.9.2] - 2026-11-11
 
 ### WebUI「账号」页：扫码登录与登录状态验证
@@ -359,6 +368,7 @@
 - 本版本不提供 EXE 或 App；跨平台独立可执行文件仍属于后续阶段。
 
 [Unreleased]: https://github.com/Stars4422335/BiliArchive-Pro/compare/v1.9.0...HEAD
+[1.9.3]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.3
 [1.9.2]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.2
 [1.9.1]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.1
 [1.9.0]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.0
