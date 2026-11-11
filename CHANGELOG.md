@@ -2,6 +2,15 @@
 
 本文件记录正式发布版本的用户可见变更。版本号遵循语义化版本格式。
 
+## [1.9.2] - 2026-11-11
+
+### WebUI「账号」页：扫码登录与登录状态验证
+
+- 新增「账号」导航页：常显当前 B 站登录状态——有效时展示账号昵称与 UID，失效或未登录时给出原因与指引。
+- 支持在 WebUI 内直接扫码登录：后端申请二维码（PNG data URL），前端每 3 秒轮询状态（等待扫码 / 已扫码 / 登录成功 / 已过期），登录完成后凭据自动原子写入 `cookie.json`（与 CLI 登录字段完全一致），核心引擎下一轮扫描自动接管。
+- NAS 用户不再需要宿主机 Python 环境跑 `login.py` 再传输凭据文件。
+- 新增 `POST /api/login/qrcode`、`GET /api/login/qrcode/{key}`、`GET /api/login/status` 三个受认证保护的端点；登录成功后立即失效 WebUI 侧凭据缓存，状态页实时反映新登录。
+
 ## [1.9.1] - 2026-11-10
 
 ### WebUI 密码认证
@@ -350,6 +359,7 @@
 - 本版本不提供 EXE 或 App；跨平台独立可执行文件仍属于后续阶段。
 
 [Unreleased]: https://github.com/Stars4422335/BiliArchive-Pro/compare/v1.9.0...HEAD
+[1.9.2]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.2
 [1.9.1]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.1
 [1.9.0]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.0
 [1.8.1]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.8.1

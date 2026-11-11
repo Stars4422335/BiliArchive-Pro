@@ -3,7 +3,7 @@
 > **Back up, sync, and organize your personal Bilibili assets — with a local WebUI**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Release: v1.9.1](https://img.shields.io/badge/release-v1.9.1-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.1)
+[![Release: v1.9.2](https://img.shields.io/badge/release-v1.9.2-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.2)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 
 [简体中文](README.md) | **English**
@@ -342,15 +342,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guide and the a
 
 ---
 
-## 🧾 What's new (v1.9.1)
+## 🧾 What's new (v1.9.2)
 
-See [CHANGELOG.md](CHANGELOG.md) and the [release notes](https://github.com/Stars4422335/BiliArchive-Pro/releases) for details. For the full ZSpace NAS deployment walkthrough (in Chinese, field-tested), refer to the Chinese README.
+See [CHANGELOG.md](CHANGELOG.md) and the [release notes](https://github.com/Stars4422335/BiliArchive-Pro/releases) for details.
 
-- **Password authentication for the WebUI**: first start generates a random bootstrap password (printed to the log), and the panel forces a complex 8-12 character password on first login. The environment token remains as a recovery backdoor.
-- **Complete settings page with hot reload**: every runtime option is now editable; each field is labelled "effective immediately" (applied to the running core via the command channel) or "requires restart".
-- **Favorites & collections auto-discovery**: pull all favorites (name + id) or a uploader's collections (name + id + uid) straight into the config rows.
-- **Asset source filter**: filter the asset list by favorites/collections/watch-later/uploader. Existing databases are migrated in place (additive-only, field-by-field lossless backfill).
-- **Docs overhaul**: the README now includes a field-tested ZSpace NAS deployment walkthrough; historical release notes live in GitHub Releases.
+- **WebUI "Account" page**: a persistent login-status card (nickname + UID when valid, reason when expired) and a QR-code login card. Scan with the Bilibili mobile app to log in directly on the NAS — credentials are written atomically and the core engine picks them up on the next scan cycle. No more host-machine `login.py` round-trip.
 
 ## ❓ Troubleshooting
 

@@ -3,7 +3,7 @@
 > **带本地 WebUI 的 Bilibili 个人数字资产备份、同步与媒体库整理工具**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Release: v1.9.1](https://img.shields.io/badge/release-v1.9.1-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.1)
+[![Release: v1.9.2](https://img.shields.io/badge/release-v1.9.2-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.2)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 
 **简体中文** | [English](README.en.md)
@@ -66,7 +66,7 @@ pip install -r requirements.txt
    - `我的文件/BiliArchive-Pro/Download` → `/app/downloads`
 4. 面板容器启动后，在 Docker 应用列表点「打开」进入 WebUI；**首启密码在核心容器日志里**（自动生成，登录后强制修改）。
 
-**账号登录（当前版本）**：先在一台装有 Python 的电脑上执行 `python login.py --qr` 扫码，把生成的 `data/cookie.json` 放入 NAS 的 `data` 挂载目录，核心引擎下一轮自动读取。WebUI 内扫码登录在后续版本提供。
+**账号登录（v1.9.2 起）**：打开 WebUI 的「账号」页，点击「生成登录二维码」，用 B 站手机 App 扫一扫即可完成登录——凭据自动写入 NAS 数据目录，核心引擎下一轮自动接管；页面同时常显当前登录状态（账号昵称 + UID）。命令行方式（`python login.py --qr`）仍然可用。
 
 **WebUI 访问安全**：默认 `BILIARCHIVE_WEB_BIND=127.0.0.1`，仅限 NAS 本机访问；局域网访问把它改为 `0.0.0.0` 并**必须**同时设置 `BILIARCHIVE_WEB_TOKEN`（作为找回凭据的后门），否则面板容器拒绝启动。日常登录使用管理密码：首次启动自动生成初始密码并打印在日志中，登录后会强制改为 8-12 位含数字、大小写与符号的复杂密码。
 
@@ -374,29 +374,15 @@ cd webui && npm ci && npm run lint && npm test && npm run build
 
 ---
 
-## 🧾 最新改进（v1.9.1）
+## 🧾 最新改进（v1.9.2）
 
 完整版本说明见 [CHANGELOG.md](CHANGELOG.md)，历史版本明细见 [GitHub Releases](https://github.com/Stars4422335/BiliArchive-Pro/releases)。
 
-**WebUI 密码认证**
+**WebUI「账号」页：扫码登录 + 登录状态验证**
 
-- 登录从固定环境令牌升级为管理密码：首次启动自动生成初始密码（打印在日志），登录后强制修改为 8-12 位含数字、大小写与符号的复杂密码；`BILIARCHIVE_WEB_TOKEN` 保留为找回凭据的后门。
-- 密码使用 PBKDF2-HMAC-SHA256 哈希存储，改密后全部旧会话立即失效。
-
-**设置页全量化 + 配置热重载**
-
-- 设置页覆盖全部运行参数（UP 主同步、词云、摘要、组件路径、GitHub 代理等此前只能改文件的项）。
-- 每项配置标注「即时生效 / 需重启」；即时项保存后通过命令通道自动热重载到核心引擎，无需重启。
-
-**收藏夹 / 合集自动发现**
-
-- 设置页一键拉取账号全部收藏夹（名称 + ID）、指定 UP 主的全部合集/系列（名称 + ID + UID），按 ID 去重合并进配置行。
-- 下载目录保持按来源名称分类（`downloads/<收藏夹或合集名>/`），自动发现的名称直接固化为目录名。
-
-**资产页来源筛选**
-
-- 资产列表新增「来源」下拉（收藏夹 / 合集 / 稍后再看 / UP 主），与类型、状态筛选并列。
-- 存量库自动升级：核心首次启动为历史资产补 `source` 列并从路径回填来源，逐字段无损（行数不变、已有数据不改动）。
+- 新增「账号」导航页：顶部常显当前登录状态（有效时展示账号昵称与 UID，失效/未登录给出原因），下方提供扫码登录卡片。
+- 点击「生成登录二维码」，用 B 站手机 App 扫一扫即可在 NAS 上直接完成登录——凭据自动原子写入数据目录，核心引擎下一轮扫描自动接管，彻底摆脱「宿主机跑 login.py 再传文件」的流程。
+- 二维码 3 分钟有效，支持重新生成；页面实时显示 等待扫码 / 已扫码 / 登录成功 / 已过期 状态。
 
 ## ❓ 常见问题
 
