@@ -233,6 +233,41 @@ def create_app(
         except Exception as exc:
             raise HTTPException(status_code=503, detail=f"自动发现失败: {exc}") from exc
 
+    @app.post("/api/login/qrcode")
+    async def login_qrcode_create() -> dict:
+        """申请一个新的扫码登录二维码（data URL 形式的 PNG）。"""
+        try:
+            return await service.login_qrcode_create()
+        except CommandError as exc:
+            raise HTTPException(
+                status_code=getattr(exc, "status", 503), detail=str(exc)
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=f"二维码申请失败: {exc}") from exc
+
+    @app.get("/api/login/qrcode/{key}")
+    async def login_qrcode_poll(key: str) -> dict:
+        """查询一次扫码状态；登录完成时后端写入凭据。"""
+        try:
+            return await service.login_qrcode_poll(key)
+        except CommandError as exc:
+            raise HTTPException(
+                status_code=getattr(exc, "status", 503), detail=str(exc)
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=f"状态查询失败: {exc}") from exc
+
+    @app.get("/api/login/status")
+    async def login_status() -> dict:
+        try:
+            return await service.login_status()
+        except CommandError as exc:
+            raise HTTPException(
+                status_code=getattr(exc, "status", 503), detail=str(exc)
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=f"状态检测失败: {exc}") from exc
+
     @app.get("/api/assets/{asset_id}/poster")
     async def poster(asset_id: str) -> FileResponse:
         path = service.poster_path(asset_id)

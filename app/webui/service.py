@@ -15,6 +15,7 @@ command-channel methods that belong to the channel rather than to a query.
 from __future__ import annotations
 
 import ipaddress
+import json
 from pathlib import Path
 from typing import Any
 
@@ -170,6 +171,164 @@ class WebService(
         except SyncFetchError as exc:
             raise command_error(f"获取合集失败: {exc}", status=503) from exc
         return {"collections": collections}
+
+    # ---------- account login (qr code + status) ----------
+
+    #: Active qr-login session. One at a time: creating a new qr code
+    #: replaces the previous session, mirroring the CLI behaviour.
+    _login_session: dict[str, Any] = {
+        "qrcode_key": None,
+        "created_at": 0.0,
+        "state": "idle",
+    }
+    #: Session validity window, matching login.py's default timeout.
+    LOGIN_SESSION_TTL = 180.0
+    _login_status_cache: dict[str, Any] = {"result": None, "loaded_at": 0.0}
+
+    async def login_qrcode_create(self) -> dict[str, Any]:
+        """申请一个新的扫码登录会话，返回二维码图片（data URL）。"""
+        import base64
+        import io
+        import time
+
+        from app.core.bili_login import create_web_qrcode
+
+        qrcode_key, url = await create_web_qrcode()
+        import qrcode
+
+        buffer = io.BytesIO()
+        image = qrcode.QRCode()
+        image.add_data(url)
+        image.make_image().save(buffer)
+        encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+        now = time.time()
+        self._login_session.update(
+            {
+                "qrcode_key": qrcode_key,
+                "created_at": now,
+                "state": "waiting",
+            }
+        )
+        return {
+            "qrcode_key": qrcode_key,
+            "qr_image": f"data:image/png;base64,{encoded}",
+            "expires_in": int(self.LOGIN_SESSION_TTL),
+        }
+
+    async def login_qrcode_poll(self, key: str) -> dict[str, Any]:
+        """查询一次扫码登录状态；登录完成时把凭据写入 cookie 路径。"""
+        import time
+
+        from app.core.bili_login import credential_is_usable, poll_qrcode
+
+        session = self._login_session
+        if not key or session.get("qrcode_key") != key:
+            raise command_error("二维码会话不存在或已失效，请重新生成", status=422)
+        created = float(session.get("created_at") or 0.0)
+        if time.time() - created > self.LOGIN_SESSION_TTL:
+            self._reset_login_session("expired")
+            return {"status": "expired"}
+        state, credential = await poll_qrcode(key)
+        if state in {"waiting", "scanned", "confirmed"}:
+            # 未扫码 / 已扫码 / 已确认：都是进行中，继续等待下一轮。
+            session["state"] = state
+            label = {
+                "waiting": "等待扫码中…",
+                "scanned": "已扫码，请在手机上确认",
+                "confirmed": "已确认，正在完成登录",
+            }[state]
+            return {"status": state, "message": label}
+        if state == "expired":
+            self._reset_login_session("expired")
+            return {"status": "expired"}
+        if state == "done" and credential is not None and credential_is_usable(credential):
+            cookie_path = self.load_raw_config().get("system", {}).get("cookie_path")
+            if not cookie_path:
+                raise command_error("配置中缺少 cookie_path", status=503)
+            self._save_credential(credential, cookie_path)
+            # 让 discover/status 的凭据缓存立即失效，避免 300s 内读到旧凭据。
+            self._credential_cache["loaded_at"] = 0.0
+            self._credential_cache["credential"] = None
+            self._login_status_cache["loaded_at"] = 0.0
+            account = await self.login_status(use_cache=False)
+            self._reset_login_session("done")
+            return {
+                "status": "done",
+                "account": account.get("account"),
+            }
+        if state == "done":
+            # ticket 交换失败等异常场景：凭据不可用。
+            self._reset_login_session("failed")
+            return {"status": "expired", "message": "登录回调凭据无效，请重新扫码"}
+        self._reset_login_session("failed")
+        return {"status": "expired", "message": "登录流程异常，请重新扫码"}
+
+    async def login_status(self, use_cache: bool = True) -> dict[str, Any]:
+        """检测当前 B 站登录状态，返回账号昵称与 UID。"""
+        import os
+        import time
+
+        from bilibili_api import user as bili_user
+
+        from app.core.auth import check_cookie, is_auth_failure
+
+        cache = self._login_status_cache
+        now = time.time()
+        if use_cache and cache["result"] is not None and now - cache["loaded_at"] < 60.0:
+            return cache["result"]
+
+        cookie_path = self.load_raw_config().get("system", {}).get("cookie_path")
+        if not cookie_path or not os.path.exists(cookie_path):
+            result = {"logged_in": False, "reason": "未登录"}
+            cache.update({"result": result, "loaded_at": now})
+            return result
+        try:
+            credential, uid = await check_cookie(cookie_path)
+        except Exception as exc:  # 网络抖动等临时错误按未知状态处理
+            if is_auth_failure(exc):
+                result = {"logged_in": False, "reason": "登录凭据已失效，请重新扫码"}
+            else:
+                result = {"logged_in": False, "reason": f"状态检测失败: {exc}"}
+            cache.update({"result": result, "loaded_at": now})
+            return result
+        if not credential:
+            result = {"logged_in": False, "reason": "登录凭据已失效，请重新扫码"}
+            cache.update({"result": result, "loaded_at": now})
+            return result
+        name = None
+        try:
+            info = await bili_user.get_self_info(credential)
+            name = str(info.get("name") or "")
+        except Exception:
+            name = None
+        result = {
+            "logged_in": True,
+            "account": {"name": name or f"UID {uid}", "uid": int(uid or 0)},
+        }
+        cache.update({"result": result, "loaded_at": now})
+        return result
+
+    def _save_credential(self, credential: Any, cookie_path: str) -> None:
+        """把扫码得到的凭据原子写入 cookie 路径（字段与 login.py 一致）。"""
+        from app.core.secure_file import atomic_write_text
+
+        if isinstance(credential, dict):
+            source = credential
+        else:
+            source = credential.get_cookies() if hasattr(credential, "get_cookies") else {}
+        fields = {
+            "sessdata": str(source.get("sessdata") or ""),
+            "bili_jct": str(source.get("bili_jct") or ""),
+            "buvid3": str(source.get("buvid3") or ""),
+            "dedeuserid": str(source.get("dedeuserid") or ""),
+            "ac_time_value": str(source.get("ac_time_value") or ""),
+        }
+        atomic_write_text(cookie_path, json.dumps(fields, ensure_ascii=False, indent=4) + "\n")
+
+    def _reset_login_session(self, state: str) -> None:
+        self._login_session.update(
+            {"qrcode_key": None, "created_at": 0.0, "state": state}
+        )
 
 
 __all__ = [
