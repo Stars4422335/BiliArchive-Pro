@@ -136,7 +136,9 @@ export function normalizeConfig(payload) {
 }
 
 export function configPayload(config) {
-  const { revision, ...publicConfig } = config;
+  // revision 是乐观锁；effects 是保存响应的元数据，都不属于配置本体，
+  // 回传会被后端白名单校验拒绝（"不允许配置字段"）。
+  const { revision, effects, ...publicConfig } = config;
   return { revision, config: publicConfig };
 }
 
