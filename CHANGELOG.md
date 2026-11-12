@@ -2,6 +2,12 @@
 
 本文件记录正式发布版本的用户可见变更。版本号遵循语义化版本格式。
 
+## [1.9.5] - 2026-11-12
+
+### 修复：设置保存报「不允许配置字段: effects」
+
+- 保存响应中的 effects 元数据（即时生效/需重启统计）被前端合并进配置对象后原样回传，触发后端白名单校验拒绝。`configPayload` 现在会剥离 revision 与 effects，设置保存恢复正常。
+
 ## [1.9.4] - 2026-11-12
 
 ### 下载登录门禁
@@ -388,6 +394,7 @@
 - 本版本不提供 EXE 或 App；跨平台独立可执行文件仍属于后续阶段。
 
 [Unreleased]: https://github.com/Stars4422335/BiliArchive-Pro/compare/v1.9.0...HEAD
+[1.9.5]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.5
 [1.9.4]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.4
 [1.9.3]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.3
 [1.9.2]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.2

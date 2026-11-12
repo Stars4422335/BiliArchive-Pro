@@ -3,7 +3,7 @@
 > **带本地 WebUI 的 Bilibili 个人数字资产备份、同步与媒体库整理工具**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Release: v1.9.4](https://img.shields.io/badge/release-v1.9.4-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.4)
+[![Release: v1.9.5](https://img.shields.io/badge/release-v1.9.5-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.5)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 
 **简体中文** | [English](README.en.md)
@@ -374,7 +374,7 @@ cd webui && npm ci && npm run lint && npm test && npm run build
 
 ---
 
-## 🧾 最新改进（v1.9.4）
+## 🧾 最新改进（v1.9.5）
 
 完整版本说明见 [CHANGELOG.md](CHANGELOG.md)，历史版本明细见 [GitHub Releases](https://github.com/Stars4422335/BiliArchive-Pro/releases)。
 
@@ -383,6 +383,7 @@ cd webui && npm ci && npm run lint && npm test && npm run build
 - 下载前强制校验登录状态（fail-closed）：游客身份只会拿到 480p/360p，门禁直接拒绝下载，杜绝低清入库。
 - 「操作」页新增清晰度审计：对比本地已下载与源端可用清晰度（对比法，源本身就低的视频不误判），确认后一键清除低清资产并自动重下高清。
 - 下载总开关默认关闭：升级后请在设置页/操作页打开「启用下载」；配合账号页扫码登录，构成「登录 → 开关 → 高清下载」的完整链路。
+- 修复：设置保存报「不允许配置字段: effects」的问题（v1.9.4 引入的前端回传字段泄漏）。
 
 ## ❓ 常见问题
 
