@@ -3,7 +3,7 @@
 > **带本地 WebUI 的 Bilibili 个人数字资产备份、同步与媒体库整理工具**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Release: v1.9.3](https://img.shields.io/badge/release-v1.9.3-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.3)
+[![Release: v1.9.4](https://img.shields.io/badge/release-v1.9.4-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.4)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 
 **简体中文** | [English](README.en.md)
@@ -374,15 +374,15 @@ cd webui && npm ci && npm run lint && npm test && npm run build
 
 ---
 
-## 🧾 最新改进（v1.9.3）
+## 🧾 最新改进（v1.9.4）
 
 完整版本说明见 [CHANGELOG.md](CHANGELOG.md)，历史版本明细见 [GitHub Releases](https://github.com/Stars4422335/BiliArchive-Pro/releases)。
 
-**引擎启动逻辑改造：无需先登录即可运行**
+**下载登录门禁 + 清晰度审计 + 下载总开关**
 
-- 核心引擎启动不再要求先登录：无凭据时保持运行并进入「等待扫码登录」状态（WebUI 概览页与 runtime.json 均可见），每 30 秒检测凭据文件。
-- 在 WebUI「账号」页扫码后引擎**无需重启**即自动校验新凭据并恢复备份；凭据中途失效也不再无限重启容器。
-- 与 v1.9.2 的 WebUI 扫码登录组成完整闭环：NAS 首次部署 → 打开面板 → 扫码 → 自动开始备份。
+- 下载前强制校验登录状态（fail-closed）：游客身份只会拿到 480p/360p，门禁直接拒绝下载，杜绝低清入库。
+- 「操作」页新增清晰度审计：对比本地已下载与源端可用清晰度（对比法，源本身就低的视频不误判），确认后一键清除低清资产并自动重下高清。
+- 下载总开关默认关闭：升级后请在设置页/操作页打开「启用下载」；配合账号页扫码登录，构成「登录 → 开关 → 高清下载」的完整链路。
 
 ## ❓ 常见问题
 

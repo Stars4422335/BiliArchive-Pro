@@ -2,6 +2,26 @@
 
 本文件记录正式发布版本的用户可见变更。版本号遵循语义化版本格式。
 
+## [1.9.4] - 2026-11-12
+
+### 下载登录门禁
+
+- 下载前强制校验登录凭据（fail-closed）：cookie 文件缺失、字段为空（sessdata/dedeuserid）或读取失败一律拒绝下载——游客身份只会拿到 480p/360p 且 yt-dlp 仍报告成功，门禁从源头杜绝低清入库。
+
+### 清晰度审计与受控清除重下
+
+- 新增「清晰度审计」（操作页触发）：对比本地 info.json 记录的实际清晰度与登录状态下源端当前可用的最高清晰度（playurl accept_quality 映射），**只有源端确实更高才标记降级**——源本身就只有低清的视频不会被误删。
+- 证据不足（无 info.json / 源端失效 / 探测失败）一律跳过，宁漏删不误删。
+- 审计产出清单在 WebUI 展示（本地 p → 源端 p），用户逐项确认后经 `purge_low_quality` 命令执行：完整删除目录（视频/封面/NFO/info.json）→ 移除数据库记录 → 自动登记重下，下一轮登录状态下载最高清晰度。
+- 删除在 daemon 侧二次校验：路径必须位于下载根内且目录名含资产编号（防路径穿越），单次上限 100 个。
+
+### 下载总开关（默认停止）
+
+- 新增 `system.download_enabled` 配置（默认 false）：关闭时核心跳过全部下载来源，概览页显示「下载已暂停」，命令通道保持响应（trigger_scan 可唤醒）。
+- WebUI 设置页开关 + 操作页醒目的启停按钮，即时热生效并持久保存；正在下载中的文件完成后自然停止，不做粗暴截断。
+
+**升级提示**：默认关闭下载——升级后请在设置页（或操作页）打开「启用下载」开关；确保「账号」页登录状态有效后再开启，配合下载门禁保证只下载最高清晰度。
+
 ## [1.9.3] - 2026-11-11
 
 ### 引擎启动逻辑改造：无凭据也可运行，扫码后自动恢复
@@ -368,6 +388,7 @@
 - 本版本不提供 EXE 或 App；跨平台独立可执行文件仍属于后续阶段。
 
 [Unreleased]: https://github.com/Stars4422335/BiliArchive-Pro/compare/v1.9.0...HEAD
+[1.9.4]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.4
 [1.9.3]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.3
 [1.9.2]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.2
 [1.9.1]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.1

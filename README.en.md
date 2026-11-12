@@ -3,7 +3,7 @@
 > **Back up, sync, and organize your personal Bilibili assets — with a local WebUI**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Release: v1.9.3](https://img.shields.io/badge/release-v1.9.3-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.3)
+[![Release: v1.9.4](https://img.shields.io/badge/release-v1.9.4-green.svg)](https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.4)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 
 [简体中文](README.md) | **English**
@@ -342,11 +342,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guide and the a
 
 ---
 
-## 🧾 What's new (v1.9.3)
+## 🧾 What's new (v1.9.4)
 
 See [CHANGELOG.md](CHANGELOG.md) and the [release notes](https://github.com/Stars4422335/BiliArchive-Pro/releases) for details.
 
-- **Daemon no longer requires login at startup**: without valid credentials the engine keeps running in a "waiting for QR login" state (visible on the overview page), polling for the credential file every 30 seconds. Scanning in the WebUI "Account" page recovers the backup **without a restart**; mid-run credential expiry no longer causes a container restart loop.
+- **Download login gate**: downloads are refused while logged out (guest streams are capped at 480p), preventing low-quality files from entering the library.
+- **Quality audit & controlled re-download**: compares local info.json height against the highest quality the source currently offers (comparison-based, so videos that are natively low-res are never flagged); confirmed items are purged with full directory removal and automatically re-downloaded in the best quality.
+- **Download master switch (default off)**: enable it in Settings/Operations after upgrading; combined with QR login this completes the "login → switch → hi-res downloads" flow.
 
 ## ❓ Troubleshooting
 
