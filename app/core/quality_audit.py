@@ -108,11 +108,10 @@ async def probe_source_height(bvid: str, credential, parser=None) -> int | None:
     if not isinstance(accept, list) or not accept:
         return None
     heights = [
-        QN_TO_HEIGHT.get(int(qn))
+        QN_TO_HEIGHT[int(qn)]
         for qn in accept
         if isinstance(qn, (int, float)) and int(qn) in QN_TO_HEIGHT
     ]
-    heights = [h for h in heights if h]
     if not heights:
         return None
     return max(heights)
