@@ -10,6 +10,8 @@ from app.scheduler import daemon
 class DummyScanner:
     max_global_downloads = 0
     global_download_count = 0
+    # v1.9.4 起 daemon 按此开关决定是否执行下载来源
+    download_enabled = True
 
     def __init__(self, config, cred, db, path_mgr, uid=None, config_path=None):
         self.parser = self
@@ -273,6 +275,7 @@ def test_daemon_loop_starts_without_credential_and_recovers(monkeypatch, tmp_pat
     config["system"]["check_update_on_start"] = False
     config["system"]["db_path"] = str(tmp_path / "archive.db")
     config["system"]["scan_interval_seconds"] = 1
+    config["system"]["download_enabled"] = True
     config["network"] = {"request_timeout_seconds": 30}
 
     monkeypatch.setattr("app.scheduler.daemon.DatabaseManager", lambda db_path, **_: DummyDatabase())

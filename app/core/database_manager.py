@@ -312,6 +312,27 @@ class DatabaseManager:
                 (now, asset_key),
             )
 
+    def get_asset_path(self, bvid):
+        """读取资产行的 path；无记录返回 None。"""
+        asset_key = self._validate_asset_key(bvid)
+        row = self.conn.execute(
+            "SELECT path FROM assets WHERE bvid=?", (asset_key,)
+        ).fetchone()
+        return row[0] if row else None
+
+    def delete_asset(self, bvid):
+        """按 bvid 删除资产行（仅清除资产记录，不动文件）。
+
+        仅供清晰度清除流程使用：调用方负责先校验并删除对应目录。
+        返回是否删除了行。
+        """
+        asset_key = self._validate_asset_key(bvid)
+        with self.conn:
+            cursor = self.conn.execute(
+                "DELETE FROM assets WHERE bvid=?", (asset_key,)
+            )
+        return cursor.rowcount > 0
+
     def update_status(self, bvid, status):
         asset_key = self._validate_asset_key(bvid)
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

@@ -268,6 +268,18 @@ def create_app(
         except Exception as exc:
             raise HTTPException(status_code=503, detail=f"状态检测失败: {exc}") from exc
 
+    @app.post("/api/quality/audit")
+    async def quality_audit() -> dict:
+        """清晰度审计：对比本地与源端可用清晰度，只产出证据清单。"""
+        try:
+            return await service.run_quality_audit()
+        except CommandError as exc:
+            raise HTTPException(
+                status_code=getattr(exc, "status", 503), detail=str(exc)
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=f"审计失败: {exc}") from exc
+
     @app.get("/api/assets/{asset_id}/poster")
     async def poster(asset_id: str) -> FileResponse:
         path = service.poster_path(asset_id)

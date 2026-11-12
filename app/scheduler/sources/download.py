@@ -93,6 +93,17 @@ class DownloadMixin:
         """下载一个视频，并保证多P媒体、NFO 与封面使用同一布局。"""
         bvid = str(item.get("bvid") or "").strip()
         title = str(item.get("title") or "Unknown")
+        # 登录门禁：游客身份只会拿到低清晰度流，直接拒绝下载。
+        if not self._login_gate_open():
+            self._report_progress(
+                status="scanning",
+                phase="download_blocked",
+                source=source_name,
+                current_title=title,
+                current_asset=bvid,
+                message="下载被跳过：未登录（游客清晰度被禁止），请到 WebUI 账号页扫码",
+            )
+            return None
         self._report_progress(
             status="scanning",
             phase="asset",

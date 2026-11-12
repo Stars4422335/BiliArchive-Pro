@@ -11,6 +11,15 @@ from app.core.path_manager import PathManager
 from app.scheduler.scanner import FavScanner
 
 
+@pytest.fixture(autouse=True)
+def _bypass_download_login_gate(monkeypatch):
+    """v1.9.4 下载门禁默认拦截无 cookie 下载；下载流程测试统一绕过门禁，
+    门禁自身行为由 test_v194 的模块级函数测试覆盖。"""
+    from app.scheduler.sources.base import ScannerBase
+
+    monkeypatch.setattr(ScannerBase, "_login_gate_open", lambda self: True)
+
+
 class ExistingAssetDatabase:
     def __init__(self, archive_path="/archive/existing"):
         self.last_checks = []

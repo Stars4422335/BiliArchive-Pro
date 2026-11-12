@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { RefreshCw, RotateCcw, Terminal } from "lucide-react";
+import { Gauge, PauseCircle, PlayCircle, RefreshCw, RotateCcw, Terminal } from "lucide-react";
 import { ApiError, api } from "../api/client";
 import { ErrorState, LoadingState, StatusBadge } from "../components/ui";
 
@@ -7,6 +7,8 @@ const COMMAND_LABELS = {
   trigger_scan: "触发即时巡检",
   redownload_asset: "重新下载资产",
   restart: "提示重启核心",
+  reload_config: "配置热重载",
+  purge_low_quality: "清除低清晰度资产",
 };
 
 const STATUS_LABELS = {
@@ -23,6 +25,10 @@ export default function OperationsView({ requireAuthentication }) {
   const [submitting, setSubmitting] = useState("");
   const [feedback, setFeedback] = useState(null);
   const [confirming, setConfirming] = useState(null);
+  const [downloadOn, setDownloadOn] = useState(null);
+  const [audit, setAudit] = useState(null);
+  const [auditBusy, setAuditBusy] = useState(false);
+  const [auditError, setAuditError] = useState("");
   const polling = useRef(false);
 
   const load = useCallback(async () => {
@@ -41,7 +47,16 @@ export default function OperationsView({ requireAuthentication }) {
     }
   }, [requireAuthentication]);
 
-  useEffect(() => { load(); }, [load]);
+  const loadDownloadState = useCallback(async () => {
+    try {
+      const config = await api.getConfig();
+      setDownloadOn(Boolean(config?.config?.system?.download_enabled));
+    } catch {
+      // 状态读取失败不阻塞页面其余功能
+    }
+  }, []);
+
+  useEffect(() => { load(); loadDownloadState(); }, [load, loadDownloadState]);
 
   // 队列里有待处理命令时轻量轮询，直到核心回执完毕。
   useEffect(() => {
@@ -75,6 +90,48 @@ export default function OperationsView({ requireAuthentication }) {
     }
   }
 
+  async function toggleDownload() {
+    const next = !downloadOn;
+    setSubmitting("toggle_download");
+    setFeedback(null);
+    try {
+      const current = await api.getConfig();
+      await api.putConfig({
+        revision: current.revision,
+        config: { system: { download_enabled: next } },
+      });
+      setDownloadOn(next);
+      setFeedback({ tone: "success", message: next ? "下载已开启（即时生效）。" : "下载已暂停（当前文件完成后停止）。" });
+    } catch (toggleError) {
+      if (toggleError instanceof ApiError && toggleError.status === 401) requireAuthentication();
+      setFeedback({ tone: "danger", message: toggleError?.message || "开关切换失败。" });
+    } finally {
+      setSubmitting("");
+    }
+  }
+
+  async function runAudit() {
+    setAuditBusy(true);
+    setAuditError("");
+    setAudit(null);
+    try {
+      setAudit(await api.runQualityAudit());
+    } catch (auditFailure) {
+      if (auditFailure instanceof ApiError && auditFailure.status === 401) requireAuthentication();
+      setAuditError(auditFailure?.message || "清晰度审计失败。");
+    } finally {
+      setAuditBusy(false);
+    }
+  }
+
+  async function purgeLowQuality() {
+    const ids = (audit?.downgraded || []).map((item) => item.bvid);
+    if (!ids.length) return;
+    await submit({ command: "purge_low_quality", payload: { asset_ids: ids } }, "purge");
+    setAudit(null);
+    await load();
+  }
+
   const history = [...(snapshot?.history || [])].reverse();
 
   return <div className="view-stack">
@@ -96,6 +153,26 @@ export default function OperationsView({ requireAuthentication }) {
     {feedback && <div className={`state-block ${feedback.tone === "danger" ? "state-error" : "state-success"}`} role="status">{feedback.message}</div>}
 
     {snapshot && <>
+      <section className="settings-section">
+        <div className="settings-section-heading">
+          <div><h2>下载总开关</h2><p>关闭时核心跳过全部下载来源（默认关闭）。状态即时生效并持久保存。</p></div>
+          <div className="header-actions">
+            <button
+              className={`button button-compact ${downloadOn ? "button-warning" : "button-primary"}`}
+              type="button"
+              onClick={toggleDownload}
+              disabled={submitting === "toggle_download"}
+            >
+              {submitting === "toggle_download" ? "切换中…"
+                : downloadOn ? <><PauseCircle size={15} />暂停下载</> : <><PlayCircle size={15} />开启下载</>}
+            </button>
+          </div>
+        </div>
+        <div className="state-block" style={{ margin: 0 }}>
+          {downloadOn === null ? "正在读取开关状态…" : downloadOn ? "下载已开启：核心按周期巡检并下载。" : "下载已暂停：开启后下一轮巡检自动恢复。"}
+        </div>
+      </section>
+
       <section className="settings-section">
         <div className="settings-section-heading">
           <div><h2>可执行操作</h2><p>指令写入本地命令通道，由核心引擎轮询消费，无需直连守护进程。</p></div>
@@ -136,6 +213,15 @@ export default function OperationsView({ requireAuthentication }) {
           />
         </div>
       </section>
+
+      <QualityAuditSection
+        audit={audit}
+        auditBusy={auditBusy}
+        auditError={auditError}
+        purging={submitting === "purge"}
+        onRun={runAudit}
+        onPurge={purgeLowQuality}
+      />
 
       <section className="settings-section">
         <div className="settings-section-heading">
@@ -221,9 +307,10 @@ function RedownloadCard({ busy, disabled, confirming, onAsk, onCancel, onRun }) 
 function CommandRow({ item }) {
   const payload = item.payload || {};
   const target = payload.asset_id ? ` · ${payload.asset_id}` : "";
+  const purgeCount = payload.asset_ids ? ` · ${payload.asset_ids.length} 个资产` : "";
   return <li className="command-row">
     <div className="command-row-main">
-      <strong>{COMMAND_LABELS[item.command] || item.command}{target}</strong>
+      <strong>{COMMAND_LABELS[item.command] || item.command}{target}{purgeCount}</strong>
       <span>{item.note || item.result || "等待核心引擎回执"}</span>
     </div>
     <div className="command-row-meta">
@@ -231,4 +318,50 @@ function CommandRow({ item }) {
       <time dateTime={item.finished_at || item.queued_at}>{item.finished_at || item.queued_at || ""}</time>
     </div>
   </li>;
+}
+
+function QualityAuditSection({ audit, auditBusy, auditError, purging, onRun, onPurge }) {
+  const [confirming, setConfirming] = useState(false);
+  const items = audit?.downgraded || [];
+  const skipped = audit?.skipped_count || 0;
+  return <section className="settings-section">
+    <div className="settings-section-heading">
+      <div><h2>清晰度审计</h2><p>对比本地已下载清晰度与源端当前可用清晰度；只有源端确实更高才标记为低清。源端本身就低的视频不会被动到。</p></div>
+      <div className="header-actions">
+        <button className="button button-secondary button-compact" type="button" onClick={onRun} disabled={auditBusy || purging}>
+          <Gauge size={15} />{auditBusy ? "审计中…" : "运行清晰度审计"}
+        </button>
+      </div>
+    </div>
+    {auditError && <ErrorState message={auditError} />}
+    {auditBusy && <LoadingState label="正在逐个探测源端清晰度（需要登录凭据，视频较多时会花几分钟）" />}
+    {!auditBusy && !audit && <p className="inline-empty">尚未运行审计。建议在登录状态正常时运行。</p>}
+    {!auditBusy && audit && <>
+      <p className="inline-empty">
+        审计完成：{items.length} 个降级资产，{skipped} 个证据不足跳过（无 info.json 或源端探测失败，均未标记）。
+      </p>
+      {items.length === 0 ? <p className="inline-empty">未发现降级资产，无需处理。</p> : confirming ? (
+        <div className="command-card command-card-confirm">
+          <h3>确认清除 {items.length} 个低清资产并重下高清？</h3>
+          <p>将完整删除以下目录（视频/封面/NFO/info.json）并从数据库移除记录，下一轮登录状态下自动重新下载最高清晰度版本。源端已失效的视频将不再恢复。</p>
+          <ul className="command-list">
+            {items.map((item) => <li className="command-row" key={item.bvid}>
+              <div className="command-row-main">
+                <strong>{item.title || item.bvid}</strong>
+                <span>本地 {item.local_height}p → 源端最高 {item.source_height}p</span>
+              </div>
+            </li>)}
+          </ul>
+          <div className="command-card-actions">
+            <button className="button button-secondary button-compact" type="button" onClick={() => setConfirming(false)} disabled={purging}>取消</button>
+            <button className="button button-warning button-compact" type="button" onClick={onPurge} disabled={purging}>{purging ? "清除中…" : `确认清除 ${items.length} 个并重下`}</button>
+          </div>
+        </div>
+      ) : (
+        <div className="command-card-actions">
+          <button className="button button-warning button-compact" type="button" onClick={() => setConfirming(true)} disabled={purging}>查看清除清单</button>
+        </div>
+      )}
+    </>}
+  </section>;
 }

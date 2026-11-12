@@ -8,6 +8,8 @@ export const emptyConfig = {
     plex_mode: true,
     sync_watch_later: false,
     sync_watch_history: false,
+    download_enabled: false,
+    quality_audit_enabled: false,
     max_history_days: 90,
     db_wal: false,
     verify_integrity: "light",

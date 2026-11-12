@@ -7,6 +7,34 @@ import re
 from bilibili_api import aid2bvid
 
 
+def login_gate_open(cookie_path) -> bool:
+    """下载门禁：cookie 凭据可用才允许下载。
+
+    游客身份下载只会拿到 480p/360p 低清晰度流且 yt-dlp 仍报告成功，
+    所以必须在下载前 fail-closed 校验：cookie 文件存在且
+    sessdata/dedeuserid 都非空才算登录。任何读取失败一律拒绝。
+    """
+    import json
+    import os
+
+    if not cookie_path or not os.path.exists(cookie_path):
+        print("[-] 下载门禁：登录凭据文件不存在，拒绝下载（防止游客低清入库）。")
+        return False
+    try:
+        with open(cookie_path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError) as exc:
+        print(f"[-] 下载门禁：登录凭据读取失败，拒绝下载: {exc}")
+        return False
+    if not isinstance(data, dict):
+        print("[-] 下载门禁：登录凭据格式无效，拒绝下载。")
+        return False
+    if not (str(data.get("sessdata") or "").strip() and str(data.get("dedeuserid") or "").strip()):
+        print("[-] 下载门禁：登录凭据字段不完整（sessdata/dedeuserid 为空），拒绝下载。")
+        return False
+    return True
+
+
 class ScannerBase:
     MAX_EXPECTED_PARTS = 1000
     MEDIA_EXTENSIONS = {
@@ -26,6 +54,10 @@ class ScannerBase:
             self._progress_callback(**payload)
         except Exception as exc:
             print(f"[!] 运行状态上报失败，扫描继续: {exc}")
+
+    def _login_gate_open(self) -> bool:
+        """下载门禁：cookie 凭据可用才允许下载（详见 login_gate_open）。"""
+        return login_gate_open(getattr(self, "cookie_path", None))
 
     @staticmethod
     async def _wait_for_next_page():

@@ -18,6 +18,9 @@ system:
   check_update_on_start: false # 每次启动时检查组件更新
   scan_interval_seconds: 21600 # 每轮扫描结束后的休眠时间 (秒)
   max_downloads_per_run: 0     # 每次运行最大下载视频数 (0=无限制，下载全部；建议测试时设为1)
+  download_enabled: false      # 下载总开关 (v1.9.4)：false=暂停全部下载（默认），true=按周期巡检下载。
+                               # 可在 WebUI 设置页/操作页切换，即时生效；掉登录时下载门禁也会自动拦截
+  quality_audit_enabled: false # 清晰度审计 (v1.9.4)：巡检时对比本地与源端清晰度，低清清单在 WebUI 操作页确认清除重下
   download_timeout_seconds: 7200 # 单个 yt-dlp 任务超时；0 表示不限制
 
 sync_collections:

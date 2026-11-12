@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -329,6 +330,55 @@ class WebService(
         self._login_session.update(
             {"qrcode_key": None, "created_at": 0.0, "state": state}
         )
+
+    # ---------- quality audit ----------
+
+    async def run_quality_audit(self, limit: int = 300) -> dict[str, Any]:
+        """审计已下载视频的清晰度：本地 info.json vs 源端可用最高。
+
+        只产出证据清单，不做任何删除；清除由用户在 WebUI 确认后经
+        purge_low_quality 命令由核心执行（daemon 侧再二次校验）。
+        """
+        from app.core.quality_audit import audit_asset, probe_source_height, read_local_height
+
+        credential, uid = await self._login_credential()
+        database = self._database()
+        rows = database.query(
+            "SELECT bvid, title, path, p_count FROM assets "
+            "WHERE type='video' AND status=0 AND path IS NOT NULL AND path != '' "
+            "ORDER BY last_check DESC LIMIT ?",
+            [int(limit)],
+        )
+        download_root = self.download_root()
+        downgraded: list[dict[str, Any]] = []
+        skipped = 0
+        for row in rows:
+            asset_dir = Path(os.fspath(row["path"]))
+            if not asset_dir.is_absolute():
+                asset_dir = self.project_root / asset_dir
+            resolved = asset_dir.resolve()
+            if not resolved.is_relative_to(download_root):
+                skipped += 1
+                continue
+            local_height = read_local_height(resolved, row["p_count"] or 1)
+            if local_height is None:
+                skipped += 1
+                continue
+            source_height = await probe_source_height(str(row["bvid"]), credential)
+            if source_height is None:
+                skipped += 1
+                continue
+            verdict = audit_asset(local_height, source_height)
+            if verdict.get("downgraded"):
+                downgraded.append(
+                    {
+                        "bvid": row["bvid"],
+                        "title": row["title"],
+                        "local_height": local_height,
+                        "source_height": source_height,
+                    }
+                )
+        return {"downgraded": downgraded, "skipped_count": skipped}
 
 
 __all__ = [

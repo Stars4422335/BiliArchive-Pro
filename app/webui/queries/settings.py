@@ -30,6 +30,8 @@ CONFIG_SCHEMA = {
         "scan_interval_seconds",
         "max_downloads_per_run",
         "download_timeout_seconds",
+        "download_enabled",
+        "quality_audit_enabled",
     },
     "network": {
         "sync_retry_attempts",
@@ -65,6 +67,8 @@ BOOLEAN_KEYS = {
     ("system", "sync_watch_history"),
     ("system", "db_wal"),
     ("system", "check_update_on_start"),
+    ("system", "download_enabled"),
+    ("system", "quality_audit_enabled"),
 }
 VERIFY_MODES = {"off", "light", "full"}
 TEXT_LIMIT_128_KEYS = {
@@ -85,6 +89,8 @@ EFFECT_METADATA = {
         ("system", "scan_interval_seconds"),
         ("system", "max_downloads_per_run"),
         ("system", "download_timeout_seconds"),
+        ("system", "download_enabled"),
+        ("system", "quality_audit_enabled"),
         ("network", "sync_retry_attempts"),
         ("network", "sync_retry_backoff_seconds"),
         ("network", "request_timeout_seconds"),

@@ -348,6 +348,7 @@ def test_commands_endpoint_lists_supported_commands_and_empty_queue(webui_fixtur
         "restart",
         "redownload_asset",
         "reload_config",
+        "purge_low_quality",
     }
     assert body["pending"] == []
 

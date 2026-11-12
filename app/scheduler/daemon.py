@@ -305,6 +305,32 @@ async def _run_scan_loop(config, cred, uid, db, runtime=None, config_path=None):
             continue
         # 轮次开始前消费命令：让 reload_config / redownload_asset 在本轮即生效
         await dispatch_commands(channel, scanner, runtime, pending_scan)
+
+        # 下载总开关（默认 False）：关闭时本轮跳过全部下载型来源，
+        # 直接进入休眠等待（命令通道保持响应，trigger_scan 可提前唤醒
+        # 重新评估开关状态）；设置页开启后下一轮自动恢复巡检。
+        if not getattr(scanner, "download_enabled", False):
+            update_runtime(
+                runtime,
+                status="idle",
+                phase="download_paused",
+                source=None,
+                current_title=None,
+                current_asset=None,
+                downloaded_count=scanner.global_download_count,
+                message="下载已暂停：请在 WebUI 设置页打开「启用下载」开关",
+                next_scan_at=None,
+            )
+            print("[*] 下载总开关处于关闭状态，本轮跳过全部下载来源。")
+            await _sleep_until_next_scan(
+                channel,
+                scanner,
+                runtime,
+                scanner.config.get('system', {}).get('scan_interval_seconds', 21600),
+                pending_scan,
+            )
+            continue
+
         target_favs = await _resolve_target_favs(scanner, runtime)
         update_runtime(
             runtime,

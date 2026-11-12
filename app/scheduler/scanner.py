@@ -67,6 +67,12 @@ class FavScanner(
         self._forced_redownloads = set()
         # 从配置读取最大下载数量，0或None表示无限制（下载全部）
         self.max_global_downloads = config.get('system', {}).get('max_downloads_per_run', 0)
+        # 下载总开关（v1.9.4）：默认 False=停止下载，WebUI 设置页可开（即时生效）
+        self.download_enabled = bool(config.get('system', {}).get('download_enabled', False))
+        # 清晰度审计开关（v1.9.4）：默认 False；开启后巡检时产出低清清单
+        self.quality_audit_enabled = bool(
+            config.get('system', {}).get('quality_audit_enabled', False)
+        )
 
     def set_progress_callback(self, callback):
         self._progress_callback = callback if callable(callback) else None
@@ -112,4 +118,58 @@ class FavScanner(
         self.max_global_downloads = fresh.get("system", {}).get(
             "max_downloads_per_run", self.max_global_downloads
         )
+        self.download_enabled = bool(
+            fresh.get("system", {}).get("download_enabled", False)
+        )
+        self.quality_audit_enabled = bool(
+            fresh.get("system", {}).get("quality_audit_enabled", False)
+        )
         return True
+
+    def purge_low_quality_assets(self, asset_ids):
+        """清除低清晰度资产目录并登记重下（每项三重校验）。
+
+        防穿越：目录必须解析后位于 download_root 内，且目录名含该
+        bvid（与 path_manager 命名约定一致）。任何校验不过都跳过。
+        返回 (成功数, 失败数)。
+        """
+        import shutil
+        from pathlib import Path
+
+        purged = 0
+        failed = 0
+        root = Path(self.path_mgr.root).resolve()
+        for asset_id in asset_ids:
+            try:
+                recorded_path = self.db.get_asset_path(asset_id)
+                if not recorded_path:
+                    print(f"[-] 清除跳过（数据库无记录）: {asset_id}")
+                    failed += 1
+                    continue
+                asset_dir = Path(recorded_path)
+                if not asset_dir.is_absolute():
+                    asset_dir = Path(self.config_path).parent / asset_dir if self.config_path else Path.cwd() / asset_dir
+                resolved = asset_dir.resolve()
+                # ① 必须在下载根内 ② 目录名必须含 bvid（命名约定）
+                if not resolved.is_relative_to(root):
+                    print(f"[-] 清除拒绝（路径越界）: {asset_id} -> {resolved}")
+                    failed += 1
+                    continue
+                if asset_id not in resolved.name:
+                    print(f"[-] 清除拒绝（目录名与资产不匹配）: {asset_id} -> {resolved.name}")
+                    failed += 1
+                    continue
+                if resolved.exists():
+                    shutil.rmtree(resolved)
+                else:
+                    print(f"[*] 目录已不存在（可能已清理）: {asset_id}")
+                if self.db.delete_asset(asset_id):
+                    self._forced_redownloads.add(asset_id)
+                    purged += 1
+                    print(f"[+] 已清除低清资产并登记重下: {asset_id}")
+                else:
+                    failed += 1
+            except Exception as exc:
+                print(f"[-] 清除失败 {asset_id}: {type(exc).__name__}: {exc}")
+                failed += 1
+        return purged, failed

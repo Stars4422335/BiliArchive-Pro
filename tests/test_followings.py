@@ -1,12 +1,22 @@
 import asyncio
 from pathlib import Path
 
+import pytest
+
 from app.core.parser import SyncFetchError
 from app.scheduler.scanner import FavScanner
 from tests.test_scanner import (
     RecordingDatabase,
     scanner_config,
 )
+
+
+@pytest.fixture(autouse=True)
+def _bypass_download_login_gate(monkeypatch):
+    """v1.9.4 下载门禁默认拦截无 cookie 下载；本文件测试统一绕过。"""
+    from app.scheduler.sources.base import ScannerBase
+
+    monkeypatch.setattr(ScannerBase, "_login_gate_open", lambda self: True)
 
 
 class RecordingPathManager:

@@ -27,8 +27,9 @@ COMMAND_TRIGGER_SCAN = "trigger_scan"
 COMMAND_RESTART = "restart"
 COMMAND_REDOWNLOAD_ASSET = "redownload_asset"
 COMMAND_RELOAD_CONFIG = "reload_config"
+COMMAND_PURGE_LOW_QUALITY = "purge_low_quality"
 
-SUPPORTED_COMMANDS = (COMMAND_TRIGGER_SCAN, COMMAND_RESTART, COMMAND_REDOWNLOAD_ASSET, COMMAND_RELOAD_CONFIG)
+SUPPORTED_COMMANDS = (COMMAND_TRIGGER_SCAN, COMMAND_RESTART, COMMAND_REDOWNLOAD_ASSET, COMMAND_RELOAD_CONFIG, COMMAND_PURGE_LOW_QUALITY)
 
 #: Commands that must never be dispatched, even if the file is hand-edited.
 #: Deleting local media stays a manual, out-of-band operation by design.
@@ -113,6 +114,18 @@ def validate_command_payload(name, payload) -> dict:
         if "asset_id" not in payload:
             raise CommandError("redownload_asset 需要 asset_id")
         return {"asset_id": validate_asset_id(payload["asset_id"])}
+
+    if normalized == COMMAND_PURGE_LOW_QUALITY:
+        # 清除低清晰度资产：只接受审计通过的证据清单（bvid 列表）。
+        unknown = set(payload) - {"asset_ids"}
+        if unknown:
+            raise CommandError(f"不允许的命令参数: {sorted(unknown)[0]}")
+        asset_ids = payload.get("asset_ids")
+        if not isinstance(asset_ids, list) or not asset_ids:
+            raise CommandError("purge_low_quality 需要非空 asset_ids 列表")
+        if len(asset_ids) > 100:
+            raise CommandError("单次最多清除 100 个资产")
+        return {"asset_ids": [validate_asset_id(item) for item in asset_ids]}
 
     if payload:
         raise CommandError(f"{normalized} 不接受任何参数")
@@ -375,6 +388,15 @@ async def dispatch_commands(channel, scanner, runtime, pending_scan=None) -> boo
                     print("[!] 配置热重载失败，继续使用当前配置。")
                     channel.complete(command, ok=False, result="配置重载失败，保留当前配置")
                 continue
+            if name == COMMAND_PURGE_LOW_QUALITY:
+                if scanner is None:
+                    raise CommandError("尚未登录，无法执行清晰度清除；请先扫码登录")
+                asset_ids = payload.get("asset_ids") or []
+                purged, failed = scanner.purge_low_quality_assets(asset_ids)
+                result_text = f"已清除 {purged} 个，失败 {failed} 个，均已在下一轮重下高清"
+                print(f"[*] 清晰度清除完成: {result_text}")
+                channel.complete(command, ok=failed == 0, result=result_text)
+                continue
             raise CommandError(f"不支持的命令: {name}")
         except CommandError as exc:
             print(f"[-] 命令执行失败: {exc}")
@@ -386,6 +408,7 @@ async def dispatch_commands(channel, scanner, runtime, pending_scan=None) -> boo
 
 
 __all__ = [
+    "COMMAND_PURGE_LOW_QUALITY",
     "COMMAND_REDOWNLOAD_ASSET",
     "COMMAND_RELOAD_CONFIG",
     "COMMAND_RESTART",
