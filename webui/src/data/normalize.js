@@ -138,8 +138,10 @@ export function normalizeConfig(payload) {
 export function configPayload(config) {
   // revision 是乐观锁；effects 是保存响应的元数据，都不属于配置本体，
   // 回传会被后端白名单校验拒绝（"不允许配置字段"）。
-  const { revision, effects, ...publicConfig } = config;
-  return { revision, config: publicConfig };
+  const publicConfig = { ...config };
+  delete publicConfig.revision;
+  delete publicConfig.effects;
+  return { revision: config.revision, config: publicConfig };
 }
 
 export function formatDate(value) {
