@@ -2,6 +2,13 @@
 
 本文件记录正式发布版本的用户可见变更。版本号遵循语义化版本格式。
 
+## [1.9.6] - 2026-11-12
+
+### 清晰度审计覆盖全部视频
+
+- 审计范围从「最近 300 个」扩展到**全部已归档视频**（上限 5000），单次运行即可覆盖整库——此前每次审计窗口随巡检漂移，导致清单不一致且越跑越多。
+- 审计完成页显示「本次探测数 / 库内总数」，未覆盖时会明确提示可再次运行。
+
 ## [1.9.5] - 2026-11-12
 
 ### 修复：设置保存报「不允许配置字段: effects」
@@ -394,6 +401,7 @@
 - 本版本不提供 EXE 或 App；跨平台独立可执行文件仍属于后续阶段。
 
 [Unreleased]: https://github.com/Stars4422335/BiliArchive-Pro/compare/v1.9.0...HEAD
+[1.9.6]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.6
 [1.9.5]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.5
 [1.9.4]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.4
 [1.9.3]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.3

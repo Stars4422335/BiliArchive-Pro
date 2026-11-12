@@ -333,9 +333,10 @@ class WebService(
 
     # ---------- quality audit ----------
 
-    async def run_quality_audit(self, limit: int = 300) -> dict[str, Any]:
+    async def run_quality_audit(self, limit: int = 2000) -> dict[str, Any]:
         """审计已下载视频的清晰度：本地 info.json vs 源端可用最高。
 
+        默认覆盖全部已归档视频（当前库通常一两千个），逐个探测源端。
         只产出证据清单，不做任何删除；清除由用户在 WebUI 确认后经
         purge_low_quality 命令由核心执行（daemon 侧再二次校验）。
         """
@@ -343,11 +344,15 @@ class WebService(
 
         credential, uid = await self._login_credential()
         database = self._database()
+        total_videos = database.scalar(
+            "SELECT COUNT(*) FROM assets "
+            "WHERE type='video' AND status=0 AND path IS NOT NULL AND path != ''"
+        )
         rows = database.query(
             "SELECT bvid, title, path, p_count FROM assets "
             "WHERE type='video' AND status=0 AND path IS NOT NULL AND path != '' "
             "ORDER BY last_check DESC LIMIT ?",
-            [int(limit)],
+            [max(1, min(int(limit), 5000))],
         )
         download_root = self.download_root()
         downgraded: list[dict[str, Any]] = []
@@ -378,7 +383,12 @@ class WebService(
                         "source_height": source_height,
                     }
                 )
-        return {"downgraded": downgraded, "skipped_count": skipped}
+        return {
+            "downgraded": downgraded,
+            "skipped_count": skipped,
+            "audited_count": len(rows),
+            "total_videos": int(total_videos or 0),
+        }
 
 
 __all__ = [

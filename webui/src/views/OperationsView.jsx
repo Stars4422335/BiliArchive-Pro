@@ -338,8 +338,11 @@ function QualityAuditSection({ audit, auditBusy, auditError, purging, onRun, onP
     {!auditBusy && !audit && <p className="inline-empty">尚未运行审计。建议在登录状态正常时运行。</p>}
     {!auditBusy && audit && <>
       <p className="inline-empty">
-        审计完成：{items.length} 个降级资产，{skipped} 个证据不足跳过（无 info.json 或源端探测失败，均未标记）。
+        审计完成：共探测 {audit.audited_count ?? "—"} 个视频（库内视频总数 {audit.total_videos ?? "—"}），{items.length} 个降级，{skipped} 个证据不足跳过（无 info.json 或源端探测失败，均未标记）。
       </p>
+      {audit.audited_count < audit.total_videos ? (
+        <p className="inline-empty">⚠️ 本次只覆盖了部分视频，可再次运行审计继续处理剩余部分。</p>
+      ) : null}
       {items.length === 0 ? <p className="inline-empty">未发现降级资产，无需处理。</p> : confirming ? (
         <div className="command-card command-card-confirm">
           <h3>确认清除 {items.length} 个低清资产并重下高清？</h3>
