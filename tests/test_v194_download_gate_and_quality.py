@@ -110,46 +110,82 @@ def test_qn_table_covers_common_tiers():
 
 
 def test_probe_source_height_maps_accept_quality(monkeypatch):
+    """httpx 直连 playurl：mock 网络层验证 accept_quality → height 映射。"""
     import asyncio
-
-
-    result = asyncio.run(_probe_case(monkeypatch))
-    assert result == 1080
-
-
-async def _probe_case(monkeypatch):
-    import bilibili_api.video as bili_video
 
     import app.core.quality_audit as qa
 
-    class FakeVideo:
-        def __init__(self, bvid, credential):
+    class FakeResponse:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    class FakeClient:
+        def __init__(self, **kwargs):
             pass
 
-        async def get_download_url(self, page_index=None):
-            return {"accept_quality": [116, 80, 64, 32, 16]}
+        async def __aenter__(self):
+            return self
 
-    monkeypatch.setattr(bili_video, "Video", FakeVideo)
-    return await qa.probe_source_height("BV1aaa1111", credential=object())
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, url, params=None):
+            if "web-interface/view" in url:
+                return FakeResponse({"code": 0, "data": {"cid": 111}})
+            return FakeResponse({
+                "code": 0,
+                "data": {"accept_quality": [116, 80, 64, 32, 16]},
+            })
+
+    monkeypatch.setattr(qa.httpx, "AsyncClient", FakeClient)
+
+    class FakeCredential:
+        def get_cookies(self):
+            return {"SESSDATA": "x"}
+
+    result = asyncio.run(qa.probe_source_height("BV1aaa1111", credential=FakeCredential()))
+    assert result == 1080
 
 
 def test_probe_source_height_failure_returns_none(monkeypatch):
     import asyncio
 
-    import bilibili_api.video as bili_video
+    import app.core.quality_audit as qa
 
-    class BoomVideo:
-        def __init__(self, bvid, credential):
+    class BoomResponse:
+        def raise_for_status(self):
+            raise RuntimeError("412 blocked")
+
+        def json(self):
+            return {}
+
+    class BoomClient:
+        def __init__(self, **kwargs):
             pass
 
-        async def get_download_url(self, page_index=None):
-            raise RuntimeError("风控")
+        async def __aenter__(self):
+            return self
 
-    monkeypatch.setattr(bili_video, "Video", BoomVideo)
-    from app.core.quality_audit import probe_source_height
+        async def __aexit__(self, *args):
+            return False
 
-    assert asyncio.run(probe_source_height("BV1aaa1111", credential=object())) is None
-    assert asyncio.run(probe_source_height("BV1aaa1111", credential=None)) is None
+        async def get(self, url, params=None):
+            return BoomResponse()
+
+    monkeypatch.setattr(qa.httpx, "AsyncClient", BoomClient)
+
+    class FakeCredential:
+        def get_cookies(self):
+            return {}
+
+    assert asyncio.run(qa.probe_source_height("BV1aaa1111", credential=FakeCredential())) is None
+    assert asyncio.run(qa.probe_source_height("BV1aaa1111", credential=None)) is None
 
 
 # ---------- purge 命令与防穿越删除 ----------

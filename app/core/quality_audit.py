@@ -22,6 +22,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 # B 站清晰度编号（qn）到像素高度的映射，官方档位。
 QN_TO_HEIGHT = {
     127: 4320,  # 超高清 8K
@@ -86,25 +88,51 @@ def read_local_height(asset_dir: os.PathLike[str] | str, p_count: int = 1) -> in
 async def probe_source_height(bvid: str, credential, parser=None) -> int | None:
     """登录态下探测源端当前可拿到的最高清晰度高度。
 
+    使用 httpx 直连 B 站旧版 playurl 端点（完整 Chrome UA + Referer +
+    登录 cookies），与下载器/parser 的请求模式一致——bilibili_api 的
+    `Video.get_download_url`（wbi 签名路径）会被 B 站网关 412 拦截，
+    不能用于探测。
+
     探测失败（视频失效/私有/风控/网络）返回 None——调用方必须跳过，
     宁漏删不误删。
     """
     if not credential:
         return None
-    try:
-        from bilibili_api import video as bili_video
 
-        video = bili_video.Video(bvid=bvid, credential=credential)
-        if parser is not None:
-            # 复用 parser 的分P信息（若调用方有），减少一次请求由调用方决定；
-            # 这里默认取第一分P。
-            pass
-        data = await video.get_download_url(page_index=0)
+    cookies = credential.get_cookies() if hasattr(credential, "get_cookies") else {}
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        ),
+        "Referer": "https://www.bilibili.com/",
+    }
+    try:
+        async with httpx.AsyncClient(cookies=cookies, headers=headers, timeout=20.0) as client:
+            # ① 视频基础信息（拿第一分P cid）
+            view = await client.get(
+                "https://api.bilibili.com/x/web-interface/view",
+                params={"bvid": bvid},
+            )
+            view.raise_for_status()
+            view_data = view.json()
+            if not isinstance(view_data, dict) or view_data.get("code") != 0:
+                return None
+            cid = (view_data.get("data") or {}).get("cid")
+            if not cid:
+                return None
+            # ② 旧版 playurl（无需 wbi 签名），qn=127 + fnval=4048 请求全部档位
+            play = await client.get(
+                "https://api.bilibili.com/x/player/playurl",
+                params={"bvid": bvid, "cid": cid, "qn": 127, "fnval": 4048, "fourk": 1},
+            )
+            play.raise_for_status()
+            play_data = play.json()
     except Exception:
         return None
-    if not isinstance(data, dict):
+    if not isinstance(play_data, dict) or play_data.get("code") != 0:
         return None
-    accept = data.get("accept_quality")
+    accept = (play_data.get("data") or {}).get("accept_quality")
     if not isinstance(accept, list) or not accept:
         return None
     heights = [

@@ -14,6 +14,7 @@ command-channel methods that belong to the channel rather than to a query.
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import json
 import os
@@ -357,6 +358,8 @@ class WebService(
         download_root = self.download_root()
         downgraded: list[dict[str, Any]] = []
         skipped = 0
+        probed = 0
+        consecutive_failures = 0
         for row in rows:
             asset_dir = Path(os.fspath(row["path"]))
             if not asset_dir.is_absolute():
@@ -370,9 +373,21 @@ class WebService(
                 skipped += 1
                 continue
             source_height = await probe_source_height(str(row["bvid"]), credential)
+            probed += 1
             if source_height is None:
+                consecutive_failures += 1
+                # 连续失败说明被风控限流：打印提示并放慢节奏，避免整轮全部空探测。
+                if consecutive_failures % 20 == 0:
+                    print(
+                        f"[!] 清晰度审计：已连续 {consecutive_failures} 个源端探测失败"
+                        "（可能触发 B 站风控限流），后续仍会继续尝试。"
+                    )
+                await asyncio.sleep(2.0)
                 skipped += 1
                 continue
+            consecutive_failures = 0
+            # 正常节奏限速：每个探测间隔 1.5 秒，1425 个约 35 分钟。
+            await asyncio.sleep(1.5)
             verdict = audit_asset(local_height, source_height)
             if verdict.get("downgraded"):
                 downgraded.append(
@@ -387,6 +402,7 @@ class WebService(
             "downgraded": downgraded,
             "skipped_count": skipped,
             "audited_count": len(rows),
+            "probed_count": probed,
             "total_videos": int(total_videos or 0),
         }
 
