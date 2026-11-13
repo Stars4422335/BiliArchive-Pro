@@ -2,6 +2,14 @@
 
 本文件记录正式发布版本的用户可见变更。版本号遵循语义化版本格式。
 
+## [1.9.7] - 2026-11-13
+
+### 修复：清晰度审计源端探测被 B 站 412 拦截
+
+- 修复前：审计探测走 bilibili_api `Video.get_download_url`（wbi 签名路径），B 站网关返回 HTTP 412 全部拒绝且异常被静默吞掉——全库审计报「1423/1425 证据不足跳过、0 降级」，实际一个源端都没探测到。
+- 修复后：探测改用 httpx 直连旧版 playurl 端点（完整 Chrome UA + Referer + 登录 cookies，与下载器/parser 请求模式一致），`view → cid → playurl(qn=127, fnval=4048, fourk=1)` 两步拿 accept_quality。经 NAS 真实资产端到端验证：已知掉登录 480P 正确标记（源端 4K），登录态 1080P 正确跳过（源端无更高档）。
+- 审计循环加限速与可观测性：探测间隔 1.5s、连续失败加码 2s，连续 20 个失败打印风控提示；响应新增 `probed_count`。
+
 ## [1.9.6] - 2026-11-12
 
 ### 清晰度审计覆盖全部视频
@@ -401,6 +409,7 @@
 - 本版本不提供 EXE 或 App；跨平台独立可执行文件仍属于后续阶段。
 
 [Unreleased]: https://github.com/Stars4422335/BiliArchive-Pro/compare/v1.9.0...HEAD
+[1.9.7]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.7
 [1.9.6]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.6
 [1.9.5]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.5
 [1.9.4]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.4
