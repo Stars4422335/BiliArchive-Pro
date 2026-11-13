@@ -2,6 +2,20 @@
 
 本文件记录正式发布版本的用户可见变更。版本号遵循语义化版本格式。
 
+## [1.9.8] - 2026-11-13
+
+### 一键审计并自动清除
+
+- 「操作」页清晰度审计新增「审计并自动清除」：点一次即完成 全库审计 → 自动入队清除全部降级资产（单条命令上限提升至 1000）→ 页面直接报告结果，无需中间确认。
+- 原「仅审计」模式保留（只出清单不删除）；`purge_low_quality` 单次上限从 100 提升到 1000。
+- 审计响应新增 `auto_purge_enqueued` / `purge_command_id`，清除进度仍可在命令通道审计区跟踪。
+
+### 可选：WebUI 免密码模式（内网部署）
+
+- 新增 `system.disable_auth` 配置（默认 false）：设置页打开后 WebUI 完全免登录，最多 1 分钟生效；随时可关回恢复密码。
+- `/api/health` 新增 `auth_disabled` 布尔；免密生效时前端直接跳过登录页。
+- 适用场景：NAS 处于可信内网、面板不对公网暴露。若面板可能被非可信设备访问，请保持密码开启。
+
 ## [1.9.7] - 2026-11-13
 
 ### 修复：清晰度审计源端探测被 B 站 412 拦截
@@ -409,6 +423,7 @@
 - 本版本不提供 EXE 或 App；跨平台独立可执行文件仍属于后续阶段。
 
 [Unreleased]: https://github.com/Stars4422335/BiliArchive-Pro/compare/v1.9.0...HEAD
+[1.9.8]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.8
 [1.9.7]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.7
 [1.9.6]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.6
 [1.9.5]: https://github.com/Stars4422335/BiliArchive-Pro/releases/tag/v1.9.5

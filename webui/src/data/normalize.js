@@ -10,6 +10,7 @@ export const emptyConfig = {
     sync_watch_history: false,
     download_enabled: false,
     quality_audit_enabled: false,
+    disable_auth: false,
     max_history_days: 90,
     db_wal: false,
     verify_integrity: "light",

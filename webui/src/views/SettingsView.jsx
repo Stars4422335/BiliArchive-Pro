@@ -148,6 +148,7 @@ export default function SettingsView({ config, loading, error, onRetry, onSave }
         <ToggleRow label="同步观看历史" description="仅记录元数据，不下载视频本体" badge={<EffectBadge section="system" k="sync_watch_history" />} checked={Boolean(draft.system.sync_watch_history)} onChange={(value) => updateSection("system", "sync_watch_history", value)} />
         <ToggleRow label="清晰度审计" description="巡检时对比本地与源端清晰度，产出低清清单（操作页可确认清除重下）" badge={<EffectBadge section="system" k="quality_audit_enabled" />} checked={Boolean(draft.system.quality_audit_enabled)} onChange={(value) => updateSection("system", "quality_audit_enabled", value)} />
         <ToggleRow label="数据库 WAL 模式" description="并发读写性能更好，需重启核心" badge={<EffectBadge section="system" k="db_wal" />} checked={Boolean(draft.system.db_wal)} onChange={(value) => updateSection("system", "db_wal", value)} />
+        <ToggleRow label="免密码模式" description="内网部署可关闭登录认证（任何能访问本页面的设备都可操作）；开启后最多 1 分钟生效，随时可关回" badge={<EffectBadge section="system" k="disable_auth" />} checked={Boolean(draft.system.disable_auth)} onChange={(value) => updateSection("system", "disable_auth", value)} />
         <ToggleRow label="启动时检查组件" description="核心启动时校验 yt-dlp / FFmpeg" badge={<EffectBadge section="system" k="check_update_on_start" />} checked={Boolean(draft.system.check_update_on_start)} onChange={(value) => updateSection("system", "check_update_on_start", value)} />
       </div></SettingsSection>
       <SettingsSection title="网络设置" description="请求超时、重试与代理。"><div className="form-grid">

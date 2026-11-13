@@ -3,6 +3,10 @@
 import json
 
 import pytest
+import yaml
+from fastapi.testclient import TestClient
+
+from app.webui import create_app
 
 from app.core.commands import (
     COMMAND_PURGE_LOW_QUALITY,
@@ -206,7 +210,7 @@ def test_purge_command_payload_validation(tmp_path):
         validate_command_payload(COMMAND_PURGE_LOW_QUALITY, {"asset_ids": []})
     with pytest.raises(Exception, match="最多"):
         validate_command_payload(
-            COMMAND_PURGE_LOW_QUALITY, {"asset_ids": ["BV1aaa1111"] * 101}
+            COMMAND_PURGE_LOW_QUALITY, {"asset_ids": ["BV1aaa1111"] * 1001}
         )
     from app.core.commands import CommandError
 
@@ -359,3 +363,111 @@ def test_download_enabled_key_is_validated_and_immediate():
 
     with pytest.raises(ConfigValidationError, match="布尔"):
         validate_config_payload({"system": {"download_enabled": "yes"}})
+
+
+# ---------- v1.9.8：免密开关 + 一键审计清除 ----------
+
+
+def test_disable_auth_key_is_validated_and_immediate():
+    from app.webui.queries.settings import (
+        CONFIG_SCHEMA,
+        effect_for,
+        validate_config_payload,
+    )
+
+    assert "disable_auth" in CONFIG_SCHEMA["system"]
+    assert effect_for("system", "disable_auth") == "immediate"
+    ok = validate_config_payload({"system": {"disable_auth": True}})
+    assert ok["system"] == {"disable_auth": True}
+    with pytest.raises(Exception, match="布尔"):
+        validate_config_payload({"system": {"disable_auth": "off"}})
+
+
+def test_purge_command_allows_1000_assets():
+    from app.core.commands import validate_command_payload
+
+    ok = validate_command_payload(
+        COMMAND_PURGE_LOW_QUALITY, {"asset_ids": ["BV1aaa1111"] * 1000}
+    )
+    assert len(ok["asset_ids"]) == 1000
+    with pytest.raises(Exception, match="最多"):
+        validate_command_payload(
+            COMMAND_PURGE_LOW_QUALITY, {"asset_ids": ["BV1aaa1111"] * 1001}
+        )
+
+
+def test_health_reports_auth_disabled(tmp_path):
+
+    config_path = tmp_path / "config.yaml"
+    base = {
+        "system": {
+            "download_path": str(tmp_path / "downloads"),
+            "db_path": str(tmp_path / "archive.db"),
+            "cookie_path": str(tmp_path / "cookie.json"),
+            "disable_auth": True,
+        },
+        "network": {},
+        "components": {
+            "yt-dlp": {"strategy": "auto", "path": "./bin/yt-dlp"},
+            "ffmpeg": {"strategy": "auto", "path": "./bin/ffmpeg"},
+        },
+    }
+    config_path.write_text(yaml.safe_dump(base, allow_unicode=True), encoding="utf-8")
+    (tmp_path / "downloads").mkdir()
+    static_dir = tmp_path / "static"
+    static_dir.mkdir()
+    (static_dir / "index.html").write_text("<html>app</html>", encoding="utf-8")
+    import sqlite3
+
+    with sqlite3.connect(tmp_path / "archive.db") as connection:
+        connection.execute(
+            "CREATE TABLE assets (bvid TEXT PRIMARY KEY, title TEXT, type TEXT, "
+            "status INTEGER, path TEXT, last_check TEXT, p_count INTEGER)"
+        )
+    app = create_app(
+        project_root=tmp_path,
+        config_path=config_path,
+        db_path=tmp_path / "archive.db",
+        static_dir=static_dir,
+        host="0.0.0.0",
+        token="some-token",
+    )
+    client = TestClient(app)
+    body = client.get("/api/health").json()
+    assert body["auth_disabled"] is True
+    # 免密生效：无凭据直接访问受保护端点
+    assert client.get("/api/dashboard").status_code == 200
+
+
+def test_auth_required_when_disable_auth_false(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    base = {
+        "system": {
+            "download_path": str(tmp_path / "downloads"),
+            "db_path": str(tmp_path / "archive.db"),
+            "cookie_path": str(tmp_path / "cookie.json"),
+            "disable_auth": False,
+        },
+        "network": {},
+        "components": {
+            "yt-dlp": {"strategy": "auto", "path": "./bin/yt-dlp"},
+            "ffmpeg": {"strategy": "auto", "path": "./bin/ffmpeg"},
+        },
+    }
+    config_path.write_text(yaml.safe_dump(base, allow_unicode=True), encoding="utf-8")
+    (tmp_path / "downloads").mkdir()
+    static_dir = tmp_path / "static"
+    static_dir.mkdir()
+    (static_dir / "index.html").write_text("<html>app</html>", encoding="utf-8")
+    app = create_app(
+        project_root=tmp_path,
+        config_path=config_path,
+        db_path=tmp_path / "archive.db",
+        static_dir=static_dir,
+        host="0.0.0.0",
+        token="t0ken-xyz",
+    )
+    client = TestClient(app)
+    body = client.get("/api/health").json()
+    assert body["auth_disabled"] is False
+    assert client.get("/api/dashboard").status_code == 401

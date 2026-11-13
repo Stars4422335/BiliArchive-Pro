@@ -67,7 +67,7 @@ export const api = {
   createLoginQrcode: () => request("/api/login/qrcode", { method: "POST" }),
   getLoginQrcodeStatus: (key) => request(`/api/login/qrcode/${encodeURIComponent(key)}`),
   getLoginStatus: () => request("/api/login/status"),
-  runQualityAudit: () => request("/api/quality/audit", { method: "POST" }),
+  runQualityAudit: (autoPurge = false) => request(`/api/quality/audit${autoPurge ? "?auto_purge=true" : ""}`, { method: "POST" }),
   getDashboard: () => request("/api/dashboard"),
   getAssets: (parameters = {}) => {
     const search = new URLSearchParams();

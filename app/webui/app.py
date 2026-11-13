@@ -78,7 +78,31 @@ def create_app(
             return None
         return supplied
 
+    def auth_disabled_by_config() -> bool:
+        """配置驱动的免密开关（system.disable_auth，内网部署用）。
+
+        60 秒缓存：避免每个请求都读配置文件；设置页切换后最多 1 分钟生效。
+        """
+        import time
+
+        now = time.time()
+        cached = getattr(app.state, "_auth_disabled_cache", None)
+        if cached and now - cached[0] < 60.0:
+            return cached[1]
+        try:
+            disabled = bool(
+                service.load_public_config()
+                .get("system", {})
+                .get("disable_auth", False)
+            )
+        except Exception:
+            disabled = False
+        app.state._auth_disabled_cache = (now, disabled)
+        return disabled
+
     def request_is_authenticated(request: Request) -> bool:
+        if auth_disabled_by_config():
+            return True
         supplied = bearer_token(request)
         if not supplied:
             return token is None
@@ -109,6 +133,7 @@ def create_app(
             "auth_required": token is not None,
             "authenticated": request_is_authenticated(request),
             "force_change": bool(auth_store is not None and auth_store.force_change),
+            "auth_disabled": auth_disabled_by_config(),
         }
 
     @app.post("/api/auth/login")
@@ -269,10 +294,10 @@ def create_app(
             raise HTTPException(status_code=503, detail=f"状态检测失败: {exc}") from exc
 
     @app.post("/api/quality/audit")
-    async def quality_audit() -> dict:
-        """清晰度审计：对比本地与源端可用清晰度，只产出证据清单。"""
+    async def quality_audit(auto_purge: bool = Query(default=False)) -> dict:
+        """清晰度审计；auto_purge=true 时完成后自动入队清除命令（一键模式）。"""
         try:
-            return await service.run_quality_audit()
+            return await service.run_quality_audit(auto_purge=auto_purge)
         except CommandError as exc:
             raise HTTPException(
                 status_code=getattr(exc, "status", 503), detail=str(exc)

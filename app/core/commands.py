@@ -123,8 +123,8 @@ def validate_command_payload(name, payload) -> dict:
         asset_ids = payload.get("asset_ids")
         if not isinstance(asset_ids, list) or not asset_ids:
             raise CommandError("purge_low_quality 需要非空 asset_ids 列表")
-        if len(asset_ids) > 100:
-            raise CommandError("单次最多清除 100 个资产")
+        if len(asset_ids) > 1000:
+            raise CommandError("单次最多清除 1000 个资产")
         return {"asset_ids": [validate_asset_id(item) for item in asset_ids]}
 
     if payload:

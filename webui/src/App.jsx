@@ -77,13 +77,13 @@ export default function App() {
   const bootstrap = useCallback(async () => {
     try {
       const health = await api.getHealth();
-      if (health.auth_required && !health.authenticated) {
+      if (health.auth_required && !health.authenticated && !health.auth_disabled) {
         setLoading((current) => ({ ...current, dashboard: false, config: false }));
         requireAuthentication("请输入管理密码登录。首次使用请查看服务日志中的自动生成密码。");
         return;
       }
       setAuthRequired(false);
-      if (health.force_change) setPasswordDialogOpen(true);
+      if (health.force_change && !health.auth_disabled) setPasswordDialogOpen(true);
       await loadCoreData();
     } catch (error) {
       const message = error?.message || "无法连接到管理 API。";

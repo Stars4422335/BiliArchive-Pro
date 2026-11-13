@@ -81,6 +81,7 @@ def test_health_is_public_and_dashboard_has_read_only_aggregates(webui_fixture):
         "auth_required": False,
         "authenticated": True,
         "force_change": False,
+        "auth_disabled": False,
     }
     dashboard = client.get("/api/dashboard")
     assert dashboard.status_code == 200
@@ -213,6 +214,7 @@ def test_non_loopback_requires_token_and_token_protects_api(webui_fixture):
         "auth_required": True,
         "authenticated": False,
         "force_change": True,
+        "auth_disabled": False,
     }
     assert client.get(
         "/api/health", headers={"Authorization": "Bearer test-token"}

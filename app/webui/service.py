@@ -334,12 +334,12 @@ class WebService(
 
     # ---------- quality audit ----------
 
-    async def run_quality_audit(self, limit: int = 2000) -> dict[str, Any]:
+    async def run_quality_audit(self, limit: int = 2000, auto_purge: bool = False) -> dict[str, Any]:
         """审计已下载视频的清晰度：本地 info.json vs 源端可用最高。
 
         默认覆盖全部已归档视频（当前库通常一两千个），逐个探测源端。
-        只产出证据清单，不做任何删除；清除由用户在 WebUI 确认后经
-        purge_low_quality 命令由核心执行（daemon 侧再二次校验）。
+        auto_purge=True 时审计完成后自动把降级清单入队 `purge_low_quality`
+        命令（核心侧仍会逐项三重校验后删除并登记重下）——一键审计+清除。
         """
         from app.core.quality_audit import audit_asset, probe_source_height, read_local_height
 
@@ -398,13 +398,25 @@ class WebService(
                         "source_height": source_height,
                     }
                 )
-        return {
+        result = {
             "downgraded": downgraded,
             "skipped_count": skipped,
             "audited_count": len(rows),
             "probed_count": probed,
             "total_videos": int(total_videos or 0),
+            "auto_purge_enqueued": False,
         }
+        if auto_purge and downgraded:
+            # 一键模式：全部降级资产一条命令入队（上限 1000，超出部分
+            # 由前端提示分批；daemon 侧仍逐项三重校验）。
+            ids = [item["bvid"] for item in downgraded][:1000]
+            channel = self.command_channel()
+            record = channel.enqueue(
+                "purge_low_quality", {"asset_ids": ids}, note="auto purge after audit"
+            )
+            result["auto_purge_enqueued"] = True
+            result["purge_command_id"] = record.get("id")
+        return result
 
 
 __all__ = [

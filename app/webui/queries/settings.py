@@ -32,6 +32,7 @@ CONFIG_SCHEMA = {
         "download_timeout_seconds",
         "download_enabled",
         "quality_audit_enabled",
+        "disable_auth",
     },
     "network": {
         "sync_retry_attempts",
@@ -69,6 +70,7 @@ BOOLEAN_KEYS = {
     ("system", "check_update_on_start"),
     ("system", "download_enabled"),
     ("system", "quality_audit_enabled"),
+    ("system", "disable_auth"),
 }
 VERIFY_MODES = {"off", "light", "full"}
 TEXT_LIMIT_128_KEYS = {
@@ -91,6 +93,7 @@ EFFECT_METADATA = {
         ("system", "download_timeout_seconds"),
         ("system", "download_enabled"),
         ("system", "quality_audit_enabled"),
+        ("system", "disable_auth"),
         ("network", "sync_retry_attempts"),
         ("network", "sync_retry_backoff_seconds"),
         ("network", "request_timeout_seconds"),

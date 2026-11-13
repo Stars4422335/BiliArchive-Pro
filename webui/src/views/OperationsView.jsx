@@ -110,12 +110,19 @@ export default function OperationsView({ requireAuthentication }) {
     }
   }
 
-  async function runAudit() {
+  async function runAudit(autoPurge = false) {
     setAuditBusy(true);
     setAuditError("");
     setAudit(null);
     try {
-      setAudit(await api.runQualityAudit());
+      const result = await api.runQualityAudit(autoPurge);
+      setAudit(result);
+      if (autoPurge && result.auto_purge_enqueued) {
+        setFeedback({
+          tone: "success",
+          message: `审计完成：${result.downgraded.length} 个降级资产已自动入队清除（命令 ID ${result.purge_command_id || "-"}），核心将逐项校验删除并登记重下高清。`,
+        });
+      }
     } catch (auditFailure) {
       if (auditFailure instanceof ApiError && auditFailure.status === 401) requireAuthentication();
       setAuditError(auditFailure?.message || "清晰度审计失败。");
@@ -328,9 +335,14 @@ function QualityAuditSection({ audit, auditBusy, auditError, purging, onRun, onP
     <div className="settings-section-heading">
       <div><h2>清晰度审计</h2><p>对比本地已下载清晰度与源端当前可用清晰度；只有源端确实更高才标记为低清。源端本身就低的视频不会被动到。</p></div>
       <div className="header-actions">
-        <button className="button button-secondary button-compact" type="button" onClick={onRun} disabled={auditBusy || purging}>
-          <Gauge size={15} />{auditBusy ? "审计中…" : "运行清晰度审计"}
-        </button>
+        <div className="header-actions" style={{ display: "flex", gap: 8 }}>
+          <button className="button button-secondary button-compact" type="button" onClick={() => onRun(false)} disabled={auditBusy || purging}>
+            <Gauge size={15} />{auditBusy ? "审计中…" : "仅审计"}
+          </button>
+          <button className="button button-primary button-compact" type="button" onClick={() => onRun(true)} disabled={auditBusy || purging}>
+            <Gauge size={15} />{auditBusy ? "执行中…" : "审计并自动清除"}
+          </button>
+        </div>
       </div>
     </div>
     {auditError && <ErrorState message={auditError} />}
@@ -339,6 +351,7 @@ function QualityAuditSection({ audit, auditBusy, auditError, purging, onRun, onP
     {!auditBusy && audit && <>
       <p className="inline-empty">
         审计完成：共探测 {audit.audited_count ?? "—"} 个视频（库内视频总数 {audit.total_videos ?? "—"}），{items.length} 个降级，{skipped} 个证据不足跳过（无 info.json 或源端探测失败，均未标记）。
+        {audit.auto_purge_enqueued && items.length > 0 && <strong> 已自动入队清除全部 {items.length} 个降级资产，核心将校验后删除并重下高清（可在下方执行审计查看进度）。</strong>}
       </p>
       {audit.audited_count < audit.total_videos ? (
         <p className="inline-empty">⚠️ 本次只覆盖了部分视频，可再次运行审计继续处理剩余部分。</p>
