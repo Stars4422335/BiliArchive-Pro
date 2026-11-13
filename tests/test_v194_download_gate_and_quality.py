@@ -6,8 +6,6 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from app.webui import create_app
-
 from app.core.commands import (
     COMMAND_PURGE_LOW_QUALITY,
     SUPPORTED_COMMANDS,
@@ -19,6 +17,7 @@ from app.core.quality_audit import QN_TO_HEIGHT, audit_asset, read_local_height
 
 # ---------- ①下载登录门禁 ----------
 from app.scheduler.sources.base import login_gate_open
+from app.webui import create_app
 
 
 def test_login_gate_blocks_missing_cookie(tmp_path):
