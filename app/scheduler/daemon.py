@@ -6,6 +6,7 @@ read (and tested) without the argument parsing around it.
 """
 
 import asyncio
+import os
 from datetime import datetime
 
 from bilibili_api import request_settings
@@ -80,19 +81,33 @@ def _mark_core_stopped(config, message):
 
 
 async def _run_source_scan(label, operation):
-    """隔离单个同步来源的读取失败，避免阻断后续来源。"""
+    """隔离单个来源的失败，避免阻断后续来源或终止整轮。
+
+    三层语义（顺序不可调换）：
+    1. 取消与重启是退出语义，必须原样穿透——否则 Ctrl+C 与 WebUI 的
+       restart 命令会被这里的兜底吞掉，守护进程变成"停不下来"。
+    2. `SyncFetchError` 是已知的列表读取失败，单独给出可读提示。
+    3. 其余异常（磁盘满、权限、第三方库 bug）一律兜底：只报废当前来源，
+       本轮走 `incomplete_sources` 标记为不完整并在下轮重试，进程继续活着。
+    """
     try:
         await operation()
         return True
+    except (asyncio.CancelledError, RestartRequested):
+        raise
     except SyncFetchError as exc:
         print(f"[-] 同步来源读取失败，已中止当前来源: {label}: {exc}")
+        return False
+    except Exception as exc:
+        print(
+            f"[-] 来源处理异常，已隔离当前来源: {label}: "
+            f"{type(exc).__name__}: {exc}"
+        )
         return False
 
 
 def _file_mtime(path):
     """cookie 文件的修改时间；路径无效或文件不存在返回 None。"""
-    import os
-
     if not path:
         return None
     try:
@@ -197,6 +212,12 @@ async def daemon_loop(config, cred, uid, config_path=None):
     """主循环守护进程"""
     print(f"\n=== 🚀 BiliArchive-Pro v{__version__} 核心引擎启动 ===")
 
+    # config_path 是 WebUI 触发 reload_config 时唯一的重读入口。相对路径
+    # （main.py 传的是 "config.yaml"）一旦碰上进程 chdir 或运维方在别的
+    # 目录拉起，就会读到不存在的文件并让热更新静默失效；在入口统一规范
+    # 为绝对路径，空值保持 None（无配置文件场景明确失败而非假成功）。
+    config_path = os.path.abspath(config_path) if config_path else None
+
     state_path = runtime_state_path(config)
     runtime = RuntimeStateWriter(state_path) if state_path else None
 
@@ -224,7 +245,17 @@ async def daemon_loop(config, cred, uid, config_path=None):
             config['system']['db_path'],
             use_wal=bool(config.get('system', {}).get('db_wal', False)),
         )
-        await _run_scan_loop(config, cred, uid, db, runtime=runtime)
+        # config_path 必须一路透传：漏传会让 FavScanner.config_path 恒为
+        # None，reload_config() 直接返回 False，WebUI 保存设置后的热更新
+        # （下载总开关、扫描间隔、来源列表、摘要开关）全部失效。
+        await _run_scan_loop(
+            config,
+            cred,
+            uid,
+            db,
+            runtime=runtime,
+            config_path=config_path,
+        )
     except asyncio.CancelledError:
         update_runtime(
             runtime,

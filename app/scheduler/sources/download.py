@@ -1,8 +1,10 @@
 """Downloading one video and keeping media, NFO and artwork on one layout."""
 
+import asyncio
 import os
 
 from app.core.metadata import MetadataGenerator
+from app.core.parser import SyncFetchError
 from app.core.summary import LocalSummarizer
 
 
@@ -90,6 +92,45 @@ class DownloadMixin:
             return ""
 
     async def _download_video_item(self, source_name, item):
+        """下载单个视频；任何异常都只报废这一个资产，不终止整轮扫描。
+
+        隔离边界放在这一层而不是调用方，是因为真实 `download_video` 只兜
+        TimeoutExpired / CalledProcessError / FileNotFoundError：磁盘满、
+        `os.makedirs` 失败、封面/NFO 落盘时的 OSError 都会逃逸。逃到
+        `_run_source_scan` 之外的后果是整轮报废 → daemon 记 status=error 后
+        退出 → Docker `restart: unless-stopped` 立刻拉起再撞同一个满盘，
+        形成无限重启循环。
+
+        `SyncFetchError` 必须原样上抛：它代表来源列表读取失败（不是单个
+        资产失败），由 `_run_source_scan` 中止当前来源。
+
+        退避账本**不在这里登记**：调用方的失败分支已经统一调
+        `_handle_download_failure()`，这里再登记一次会让一次异常把
+        fail_count 推到 2（冷却从 1 小时错抬到 6 小时）。新增调用方时记得
+        在 `download_result` 为假的 else 分支里登记。
+        """
+        try:
+            return await self._download_video_asset(source_name, item)
+        except SyncFetchError:
+            raise
+        except Exception as exc:
+            db_key = self._video_asset_key(item) or str(item.get("bvid") or "").strip()
+            title = str(item.get("title") or "Unknown")
+            print(
+                f"[-] 下载/归档异常，已隔离当前资产: {db_key}（{title}）: "
+                f"{type(exc).__name__}: {exc}"
+            )
+            self._report_progress(
+                status="scanning",
+                phase="asset_error",
+                source=source_name,
+                current_title=title,
+                current_asset=db_key,
+                message=f"下载异常已隔离，下轮重试：{title}",
+            )
+            return None
+
+    async def _download_video_asset(self, source_name, item):
         """下载一个视频，并保证多P媒体、NFO 与封面使用同一布局。"""
         bvid = str(item.get("bvid") or "").strip()
         title = str(item.get("title") or "Unknown")
@@ -122,7 +163,12 @@ class DownloadMixin:
                 title,
                 bvid,
             )
-            success = self.downloader.download_video(
+            # download_video 内部整段阻塞：subprocess.wait() 等 yt-dlp 退出，
+            # 成功后还有 random_sleep 的 time.sleep(15~35)。直接在协程里调用
+            # 会让事件循环停摆十几分钟——WebUI 命令通道（5 秒轮询）与状态
+            # 刷新全部假死。放到工作线程执行，事件循环继续调度。
+            success = await asyncio.to_thread(
+                self.downloader.download_video,
                 url=f"https://www.bilibili.com/video/{bvid}",
                 save_dir=media_dir,
                 file_name=file_name,
@@ -168,7 +214,9 @@ class DownloadMixin:
                 part_title=part_title,
                 part_count=part_count,
             )
-            success = self.downloader.download_video(
+            # 每个分 P 同样走工作线程，避免多 P 视频把事件循环占用整轮。
+            success = await asyncio.to_thread(
+                self.downloader.download_video,
                 url=f"https://www.bilibili.com/video/{bvid}?p={page_number}",
                 save_dir=media_dir,
                 file_name=file_name,
