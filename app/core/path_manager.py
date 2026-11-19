@@ -176,6 +176,10 @@ class PathManager:
 
     def mark_as_deleted(self, current_path, prefix):
         """实现孤本保护：重命名文件夹添加警告前缀"""
+        # 路径缺失时无事可做：失败账本可能留下 path 为空的最小行，
+        # 直接 os.path.exists(None) 会抛 TypeError 打断整轮扫描。
+        if not current_path:
+            return current_path
         if not os.path.exists(current_path):
             return current_path
 

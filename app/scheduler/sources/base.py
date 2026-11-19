@@ -6,6 +6,13 @@ import re
 
 from bilibili_api import aid2bvid
 
+from app.core.retry_policy import (
+    failure_count,
+    format_duration,
+    remaining_backoff_seconds,
+    should_skip_for_backoff,
+)
+
 
 def login_gate_open(cookie_path) -> bool:
     """下载门禁：cookie 凭据可用才允许下载。
@@ -58,6 +65,62 @@ class ScannerBase:
     def _login_gate_open(self) -> bool:
         """下载门禁：cookie 凭据可用才允许下载（详见 login_gate_open）。"""
         return login_gate_open(getattr(self, "cookie_path", None))
+
+    def _should_skip_for_backoff(self, db_key, local_record) -> bool:
+        """失败冷却期内跳过该资产，并打印原因（绝不静默跳过）。
+
+        `fail_count <= 0`、无记录、last_fail 缺失/非法都返回 False，
+        即只有"确实刚失败过"的资产才会被拦住。
+        """
+        if not should_skip_for_backoff(local_record):
+            return False
+        remaining = remaining_backoff_seconds(local_record)
+        print(
+            f"[*] 跳过失败冷却中的资产: {db_key}"
+            f"（连续失败 {failure_count(local_record)} 次，"
+            f"还需约 {format_duration(remaining)}）"
+        )
+        return True
+
+    def _record_download_failure(self, db_key, reason="") -> bool:
+        """登记一次下载失败，驱动下轮退避。
+
+        数据库对象若没有该能力（测试桩 / 只读适配器），跳过而不中断扫描：
+        退避是止损优化，不是业务正确性的前提。
+        """
+        database = getattr(self, "db", None)
+        recorder = getattr(database, "record_download_failure", None)
+        if recorder is None:
+            return False
+        try:
+            count = recorder(db_key, reason)
+        except Exception as exc:
+            print(f"[!] 记录下载失败次数出错（不影响本轮扫描）: {db_key}: {exc}")
+            return False
+        print(f"[*] 已登记下载失败（连续第 {count} 次）: {db_key}")
+        return True
+
+    def _reset_download_failures(self, db_key) -> bool:
+        """下载成功后清空失败账本，避免残留计数拖慢后续修复。"""
+        database = getattr(self, "db", None)
+        resetter = getattr(database, "reset_download_failures", None)
+        if resetter is None:
+            return False
+        try:
+            return bool(resetter(db_key))
+        except Exception as exc:
+            print(f"[!] 清空下载失败次数出错（不影响本轮扫描）: {db_key}: {exc}")
+            return False
+
+    def _handle_download_failure(self, db_key, reason="") -> bool:
+        """下载/抓取失败后的统一收尾：登记退避账本。
+
+        登录门禁关闭（无 cookie 或游客身份）不是资产的错——把所有资产一起
+        记进账本会让恢复登录后仍全部处于冷却期，所以这种情况不登记。
+        """
+        if not self._login_gate_open():
+            return False
+        return self._record_download_failure(db_key, reason)
 
     @staticmethod
     async def _wait_for_next_page():

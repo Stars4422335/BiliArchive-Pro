@@ -62,7 +62,9 @@ class FavoritesMixin:
                             self.db.update_asset(db_key, "已失效视频", "unknown", 1, tomb_path, source=fav_name)
                         else:
                             print(f"[-] 墓碑 NFO 写入失败，未记录完成状态: {db_key}")
-                    elif local_record['status'] == 0:
+                    # 失败账本可能留下 path 为空的最小行：没有本地文件就没有
+                    # "孤本"可保护，也不该写成 Protected。
+                    elif local_record['status'] == 0 and local_record.get('path'):
                         print(f"[!] 警告触发：视频源端已失效，启动孤本保护: {local_record['title']}")
                         new_path = self.path_mgr.mark_as_deleted(local_record['path'], self.config['archive_protection']['mark_deleted_prefix'])
                         self.db.update_asset(db_key, local_record['title'], local_record['type'], 2, new_path, source=fav_name)
@@ -77,12 +79,19 @@ class FavoritesMixin:
                             continue
                         print(f"[!] 数据库记录对应媒体不完整，准备续跑修复: {title}")
 
+                    # 退避账本：404/版权/付费/地区限制这类永久失败项若每轮都
+                    # 重试，只会白刷请求与日志。冷却期内直接跳过并打印原因。
+                    if self._should_skip_for_backoff(db_key, local_record):
+                        continue
+
                     print(f"[*] 发现新视频，准备抓取: {title}")
                     download_result = await self._download_video_item(fav_name, item)
 
                     if download_result:
                         save_path, p_count = download_result
                         self.db.update_asset(db_key, title, "video", 0, save_path, p_count, source=fav_name)
+                        # 成功即归零，避免历史失败次数影响后续续跑修复
+                        self._reset_download_failures(db_key)
                         self.global_download_count += 1  # 【全局限制】计数
                         self._report_progress(
                             status="scanning",
@@ -98,6 +107,8 @@ class FavoritesMixin:
                         if self.max_global_downloads and self.global_download_count >= self.max_global_downloads:
                             print(f"\n[✓] 【全局限制】已成功下载 {self.max_global_downloads} 个视频，测试完成！")
                             return
+                    else:
+                        self._handle_download_failure(db_key, f"视频下载未完成: {title}")
 
                 # 【情况C：专栏图文】
                 elif asset_type == "article":
@@ -107,6 +118,10 @@ class FavoritesMixin:
                     if local_record and local_record['status'] == 0:
                         print(f"[*] 专栏已在库中，跳过并更新存活标记: {title}")
                         self.db.update_last_check(article_key)
+                        continue
+
+                    # 专栏同样走失败退避：源端已删/权限受限的图文不该每轮重抓。
+                    if self._should_skip_for_backoff(article_key, local_record):
                         continue
 
                     print(f"[*] 发现新专栏图文，准备抓取: {title} ({article_key})")
@@ -133,8 +148,12 @@ class FavoritesMixin:
                         )
                         if not nfo_path:
                             print(f"[-] 专栏 NFO 写入失败，未记录完成状态: {article_key}")
+                            self._handle_download_failure(
+                                article_key, f"专栏 NFO 写入失败: {title}"
+                            )
                             continue
                         self.db.update_asset(article_key, title, "article", 0, save_path, source=fav_name)
+                        self._reset_download_failures(article_key)
                         self.global_download_count += 1
                         self._report_progress(
                             status="scanning",
@@ -150,6 +169,10 @@ class FavoritesMixin:
                         if self.max_global_downloads and self.global_download_count >= self.max_global_downloads:
                             print(f"\n[✓] 【全局限制】已成功下载 {self.max_global_downloads} 个资源，本轮结束！")
                             return
+                    else:
+                        self._handle_download_failure(
+                            article_key, f"专栏抓取失败: {title}"
+                        )
 
             # 本页处理结束，如果未触发退出条件且 has_more=True，则页码+1继续
             page += 1

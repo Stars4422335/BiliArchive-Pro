@@ -29,6 +29,11 @@ class RedownloadMixin:
             # malformed input, so it must be caught here too.
             pass
         self._forced_redownloads.update(keys)
+        # 手动重下是用户明确的重试意图：同时清空失败退避账本，否则处于
+        # 冷却期的资产会在本轮被 should_skip_for_backoff 再拦一次，
+        # WebUI 点"重新下载"看起来毫无反应。
+        for key in keys:
+            self._reset_download_failures(key)
         return keys
 
     def _consume_forced_redownload(self, db_key):

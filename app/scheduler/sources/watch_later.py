@@ -41,7 +41,9 @@ class WatchLaterMixin:
                         self.db.update_asset(db_key, "已失效视频", "unknown", 1, tomb_path, source="稍后再看")
                     else:
                         print(f"[-] 墓碑 NFO 写入失败，未记录完成状态: {db_key}")
-                elif local_record['status'] == 0:
+                # 失败账本可能留下 path 为空的最小行：没有本地文件就没有
+                # "孤本"可保护，也不该写成 Protected。
+                elif local_record['status'] == 0 and local_record.get('path'):
                     print(f"[!] 警告触发：视频源端已失效，启动孤本保护: {local_record['title']}")
                     new_path = self.path_mgr.mark_as_deleted(local_record['path'], self.config['archive_protection']['mark_deleted_prefix'])
                     self.db.update_asset(db_key, local_record['title'], local_record['type'], 2, new_path, source="稍后再看")
@@ -55,12 +57,18 @@ class WatchLaterMixin:
                     continue
                 print(f"[!] 数据库记录对应媒体不完整，准备续跑修复: {title}")
 
+            # 退避账本：失败冷却期内跳过，避免永久失败项每轮重试。
+            if self._should_skip_for_backoff(db_key, local_record):
+                continue
+
             print(f"[*] 发现新视频，准备抓取: {title}")
             download_result = await self._download_video_item("稍后再看", item)
 
             if download_result:
                 save_path, p_count = download_result
                 self.db.update_asset(db_key, title, "video", 0, save_path, p_count, source="稍后再看")
+                # 成功即归零，避免历史失败次数影响后续续跑修复
+                self._reset_download_failures(db_key)
                 self.global_download_count += 1
                 self._report_progress(
                     status="scanning",
@@ -75,3 +83,5 @@ class WatchLaterMixin:
                 if self.max_global_downloads and self.global_download_count >= self.max_global_downloads:
                     print(f"\n[✓] 【全局限制】已成功下载 {self.max_global_downloads} 个视频，测试完成！")
                     return
+            else:
+                self._handle_download_failure(db_key, f"稍后再看视频下载未完成: {title}")

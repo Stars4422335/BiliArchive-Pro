@@ -18,6 +18,11 @@ class DatabaseManager:
         "last_verify": "TEXT",
         # v1.9.1 来源筛选：收藏夹/合集名称；仅新增列，绝不动现有行。
         "source": "TEXT",
+        # 下载失败退避账本：fail_count 累计连续失败次数，
+        # last_fail 记录最近一次失败时间（本地时间文本，与 last_check 一致）。
+        # 只加列 + 默认值 0，迁移不触碰任何现有行。
+        "fail_count": "INTEGER NOT NULL DEFAULT 0",
+        "last_fail": "TEXT",
     }
 
     #: 面向真实查询的索引（万级资产实测后保留的只有这两个）。
@@ -224,7 +229,7 @@ class DatabaseManager:
         row = self.conn.execute(
             """
             SELECT bvid, title, type, status, path, last_check, p_count,
-                   integrity_status, last_verify
+                   integrity_status, last_verify, fail_count, last_fail
             FROM assets
             WHERE bvid=?
             """,
@@ -241,6 +246,8 @@ class DatabaseManager:
                 "p_count": row[6],
                 "integrity_status": row[7],
                 "last_verify": row[8],
+                "fail_count": row[9],
+                "last_fail": row[10],
             }
         return None
 
@@ -341,6 +348,54 @@ class DatabaseManager:
                 "UPDATE assets SET status=?, last_check=? WHERE bvid=?",
                 (status, now, asset_key),
             )
+
+    def record_download_failure(self, bvid, reason=""):
+        """登记一次下载失败：fail_count+1 并写 last_fail（本地时间文本）。
+
+        资产可能还没成功下载过（首次就 404、版权、付费、地区限制），此时
+        没有行可更新；为保证退避账本连续，插入一条只带失败字段的最小行：
+        path 留空，所以"是否已归档"的判断依旧为否，下次成功时
+        `update_asset` 会把 title/type/status/path 补齐。
+
+        `reason` 只用于调用方日志（表里刻意不再加列，避免为一句说明再迁移
+        一次），这里不落库。返回登记后的失败次数。
+        """
+        asset_key = self._validate_asset_key(bvid)
+        del reason  # 语义上只做标注，不参与写库
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with self.conn:
+            self.conn.execute(
+                """
+                INSERT INTO assets (bvid, fail_count, last_fail)
+                VALUES (?, 1, ?)
+                ON CONFLICT(bvid) DO UPDATE SET
+                    fail_count = COALESCE(assets.fail_count, 0) + 1,
+                    last_fail = excluded.last_fail
+                """,
+                (asset_key, now),
+            )
+        row = self.conn.execute(
+            "SELECT fail_count FROM assets WHERE bvid=?", (asset_key,)
+        ).fetchone()
+        if not row or row[0] is None:
+            return 1
+        try:
+            return int(row[0])
+        except (TypeError, ValueError):
+            return 1
+
+    def reset_download_failures(self, bvid):
+        """把失败账本归零并清空 last_fail（手动重下或下载成功后调用）。
+
+        返回是否确实改动了一行；无记录时返回 False（不新建行）。
+        """
+        asset_key = self._validate_asset_key(bvid)
+        with self.conn:
+            cursor = self.conn.execute(
+                "UPDATE assets SET fail_count=0, last_fail=NULL WHERE bvid=?",
+                (asset_key,),
+            )
+        return cursor.rowcount > 0
 
     def record_watch_history(self, bvid, title, up_name, view_at):
         """记录/更新一条观看历史（仅元数据，不涉及下载资产）。"""

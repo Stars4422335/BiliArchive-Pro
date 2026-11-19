@@ -115,6 +115,9 @@ class FavScanner(
                 fresh.get("system", {}).get("download_timeout_seconds", 7200)
             )
         )
+        # 下载重试次数、字幕白名单、词云与空间阈值同样是下载时现读的字段，
+        # 必须把新快照交给 downloader，否则它们永远停留在启动时的旧值。
+        self.downloader.refresh_config(fresh)
         self.max_global_downloads = fresh.get("system", {}).get(
             "max_downloads_per_run", self.max_global_downloads
         )
