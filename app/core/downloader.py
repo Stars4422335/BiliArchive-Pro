@@ -2,6 +2,7 @@ import json
 import math
 import os
 import random
+import re
 import shutil
 import signal
 import subprocess
@@ -15,6 +16,15 @@ from app.core.secure_file import atomic_write_text
 from app.core.wordcloud import DanmakuWordCloud
 
 IS_WINDOWS = os.name == "nt"
+
+#: yt-dlp 重试与字幕语言白名单的默认值：配置缺失、为空或非法时一律回退到这里。
+DEFAULT_DOWNLOAD_RETRIES = 10
+MAX_DOWNLOAD_RETRIES = 50
+DEFAULT_SUBTITLE_LANGS = "zh-Hans,zh-CN,zh,ai-zh"
+MAX_SUBTITLE_LANGS_LENGTH = 200
+#: 语言标签只允许字母、数字、下划线与连字符：顺带挡掉换行、空格、分号等
+#: 会被 yt-dlp 当成额外参数的异常字符。
+_SUBTITLE_LANG_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
 
 
 def _terminate_process_tree(process):
@@ -107,6 +117,64 @@ class Downloader:
         if timeout < 0:
             return 7200.0
         return min(604800.0, max(1.0, timeout))
+
+    @staticmethod
+    def _normalize_retries(value):
+        """把重试次数规范到 0~50 的整数；非法值（含负数）回退默认 10。
+
+        0 是合法值（显式关闭重试），由用户自己承担风险；负数、布尔、
+        非数字、NaN/inf 与超出上限一律当作配置错误处理。
+
+        负数必须先判再取整：`int(-0.5) == 0`，先取整会把 -0.5 误当成
+        "关闭重试"，与本函数的契约相反。
+        """
+        if isinstance(value, bool):
+            return DEFAULT_DOWNLOAD_RETRIES
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return DEFAULT_DOWNLOAD_RETRIES
+        if not math.isfinite(numeric) or numeric < 0:
+            return DEFAULT_DOWNLOAD_RETRIES
+        return min(MAX_DOWNLOAD_RETRIES, int(numeric))
+
+    @staticmethod
+    def _normalize_subtitle_langs(value):
+        """把字幕语言白名单清洗成逗号分隔串；空值/异常字符回退默认。
+
+        清洗规则：去首尾空白、丢掉空项、每一项必须是合法语言标签。
+        任何一项含换行、空格、分号等字符时整串作废回到默认值——宁可少下
+        字幕，也不让手工改坏的配置变成额外的 yt-dlp 参数。
+        """
+        if not isinstance(value, str):
+            return DEFAULT_SUBTITLE_LANGS
+        text = value.strip()
+        if not text or len(text) > MAX_SUBTITLE_LANGS_LENGTH:
+            return DEFAULT_SUBTITLE_LANGS
+        langs = []
+        for raw_lang in text.split(","):
+            lang = raw_lang.strip()
+            if not lang:
+                continue
+            if not _SUBTITLE_LANG_PATTERN.fullmatch(lang):
+                return DEFAULT_SUBTITLE_LANGS
+            langs.append(lang)
+        if not langs:
+            return DEFAULT_SUBTITLE_LANGS
+        return ",".join(langs)
+
+    def refresh_config(self, config):
+        """热更新配置快照：只换字典引用，构造期解析的组件路径保持不变。
+
+        reload_config 会重建扫描器的 config，而 Downloader 一直持有旧
+        引用；不刷新的话下载重试次数、字幕白名单、词云与空间阈值永远
+        读旧值（WebUI 显示"立即生效"却没有效果）。yt-dlp/ffmpeg 路径
+        在 __init__ 里已落到实例属性上，仍属于重启生效的字段。
+        """
+        if isinstance(config, dict):
+            self.config = config
+            return True
+        return False
 
     def convert_cookie_to_netscape(self, json_cookie_path):
         """将 JSON 格式的 cookie 转换为 Netscape 格式供 yt-dlp 使用"""
@@ -323,6 +391,15 @@ class Downloader:
             ffmpeg_path = self.resolve_executable(self.ffmpeg_path, "ffmpeg", required=False)
             ffmpeg_location = os.path.dirname(ffmpeg_path) if ffmpeg_path and os.path.dirname(ffmpeg_path) else "ffmpeg"
 
+            # 每次下载都从当前配置快照现读：WebUI 保存后无需重启即可生效。
+            system_config = self.config.get("system", {}) or {}
+            retries = self._normalize_retries(
+                system_config.get("download_retries", DEFAULT_DOWNLOAD_RETRIES)
+            )
+            subtitle_langs = self._normalize_subtitle_langs(
+                system_config.get("subtitle_langs", DEFAULT_SUBTITLE_LANGS)
+            )
+
             cmd = [
                 yt_dlp_path,
                 "-f", "bestvideo+bestaudio/best",
@@ -330,13 +407,19 @@ class Downloader:
                 "--no-playlist",
                 "--continue",
                 "--part",
+                # 单个视频失败后不再直接放弃：默认重试 10 次，可用
+                # system.download_retries 调整（0 表示不重试）。
+                "--retries", str(retries),
+                "--fragment-retries", str(retries),
                 "--cookies", netscape_cookie,
                 "--write-info-json",
                 "--write-thumbnail",
                 "--convert-thumbnails", "jpg",
                 "--write-subs",
                 "--write-auto-subs",
-                "--sub-langs", "all",
+                # 只下白名单语言：--sub-langs all 会把上百种机器翻译一起拉下来，
+                # 既慢又占空间。默认覆盖 B 站简中人工字幕与 AI 字幕。
+                "--sub-langs", subtitle_langs,
                 "--ffmpeg-location", ffmpeg_location,
                 "-o", output_template,
                 url

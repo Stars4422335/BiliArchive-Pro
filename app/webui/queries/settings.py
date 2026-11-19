@@ -30,6 +30,8 @@ CONFIG_SCHEMA = {
         "scan_interval_seconds",
         "max_downloads_per_run",
         "download_timeout_seconds",
+        "download_retries",
+        "subtitle_langs",
         "download_enabled",
         "quality_audit_enabled",
         "disable_auth",
@@ -54,6 +56,8 @@ INTEGER_LIMITS = {
     ("system", "scan_interval_seconds"): (60, 31 * 24 * 60 * 60),
     ("system", "max_downloads_per_run"): (0, 1_000_000),
     ("system", "download_timeout_seconds"): (0, 7 * 24 * 60 * 60),
+    # 与 Downloader 的清洗边界保持一致：0=不重试，上限 50。
+    ("system", "download_retries"): (0, 50),
     ("system", "max_history_days"): (0, 3650),
     ("network", "sync_retry_attempts"): (1, 10),
 }
@@ -90,10 +94,16 @@ EFFECT_METADATA = {
         ("system", "check_update_on_start"),
         ("system", "scan_interval_seconds"),
         ("system", "max_downloads_per_run"),
+        # 下面几个键都在"下载时现读"，不属于构造期快照：reload_config 会
+        # 调 Downloader.refresh_config() 把新配置换给下载器，因此重试次数、
+        # 字幕白名单、磁盘阈值、词云参数都即刻生效。
         ("system", "download_timeout_seconds"),
+        ("system", "download_retries"),
+        ("system", "subtitle_langs"),
         ("system", "download_enabled"),
         ("system", "quality_audit_enabled"),
         ("system", "disable_auth"),
+        ("system", "min_disk_gb"),
         ("network", "sync_retry_attempts"),
         ("network", "sync_retry_backoff_seconds"),
         ("network", "request_timeout_seconds"),
@@ -106,7 +116,6 @@ EFFECT_METADATA = {
         ("sync_collections", "__section__"),
     },
     "restart": {
-        ("system", "min_disk_gb"),
         ("system", "plex_mode"),
         ("system", "db_wal"),
         ("system", "verify_integrity"),
@@ -150,6 +159,13 @@ def _validate_scalar(section: str, key: str, value: Any) -> Any:
             return ""
         if not isinstance(value, str) or len(value) > 256 or any(ord(c) < 32 for c in value):
             raise ConfigValidationError(f"{section}.{key} 必须是不超过 256 字符的单行文本或空值")
+        return value.strip()
+    if section == "system" and key == "subtitle_langs":
+        # 空值合法：交给 Downloader 的清洗逻辑回退默认白名单。
+        if not isinstance(value, str) or len(value) > 200 or any(ord(c) < 32 for c in value):
+            raise ConfigValidationError(
+                f"{section}.{key} 必须是不超过 200 字符的单行文本（逗号分隔语言标签）"
+            )
         return value.strip()
     integer_limits = INTEGER_LIMITS.get((section, key))
     if integer_limits:

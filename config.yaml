@@ -22,6 +22,10 @@ system:
                                # 可在 WebUI 设置页/操作页切换，即时生效；掉登录时下载门禁也会自动拦截
   quality_audit_enabled: false # 清晰度审计 (v1.9.4)：巡检时对比本地与源端清晰度，低清清单在 WebUI 操作页确认清除重下
   download_timeout_seconds: 7200 # 单个 yt-dlp 任务超时；0 表示不限制
+  download_retries: 10         # yt-dlp 单文件/分片重试次数（0=不重试，上限 50；非法值回退 10）
+  subtitle_langs: "zh-Hans,zh-CN,zh,ai-zh"
+                               # 字幕语言白名单，逗号分隔，避免 --sub-langs all 拉下上百种机器翻译。
+                               # 留空或含非法字符时回退默认值；每项只允许字母、数字、下划线与连字符
 
 sync_collections:
   # 此处填入您想要下载的UP主“合集/列表”(Season/Series)
