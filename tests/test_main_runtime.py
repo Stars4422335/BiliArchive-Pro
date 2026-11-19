@@ -132,6 +132,89 @@ def test_daemon_loop_uses_configured_scan_interval(monkeypatch):
     assert len(slept) > 1
 
 
+# ---------- 来源级异常隔离 + 退出语义穿透 ----------
+
+
+def test_run_source_scan_isolates_unexpected_exception(capsys):
+    """未预料的异常（磁盘满、权限、第三方库 bug）只报废当前来源。"""
+    calls = []
+
+    async def operation():
+        calls.append("started")
+        raise OSError(28, "No space left on device")
+
+    assert asyncio.run(daemon._run_source_scan("收藏夹 测试 (1)", operation)) is False
+    assert calls == ["started"]
+    output = capsys.readouterr().out
+    assert "收藏夹 测试 (1)" in output
+    assert "OSError" in output
+
+
+def test_run_source_scan_keeps_sync_fetch_error_message(capsys):
+    async def operation():
+        raise SyncFetchError("page 2 failed")
+
+    assert asyncio.run(daemon._run_source_scan("稍后再看", operation)) is False
+    output = capsys.readouterr().out
+    assert "稍后再看" in output
+    assert "page 2 failed" in output
+
+
+def test_run_source_scan_never_swallows_cancellation():
+    """Ctrl+C / 任务取消必须穿透兜底，否则守护进程停不下来。"""
+
+    async def operation():
+        raise asyncio.CancelledError("用户中断")
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(daemon._run_source_scan("收藏夹 测试", operation))
+
+
+def test_run_source_scan_never_swallows_restart_request():
+    """restart 命令靠 RestartRequested 穿透到 daemon_loop 的收尾分支。"""
+
+    async def operation():
+        raise daemon.RestartRequested
+
+    with pytest.raises(daemon.RestartRequested):
+        asyncio.run(daemon._run_source_scan("收藏夹 测试", operation))
+
+
+def test_source_exception_keeps_the_daemon_alive(monkeypatch, tmp_path, capsys):
+    """端到端：来源抛异常后进程不退出、runtime.json 不出现 status=error。"""
+    import json
+
+    runtime_file = tmp_path / "runtime.json"
+    config = base_config()
+    config["system"]["check_update_on_start"] = False
+    config["system"]["download_enabled"] = True
+    config["system"]["db_path"] = str(tmp_path / "archive.db")
+    config["system"]["cookie_path"] = str(tmp_path / "cookie.json")
+    config["system"]["scan_interval_seconds"] = 0.1
+    config["favorites"] = [{"id": 1, "name": "First"}]
+
+    class ExplodingScanner(DummyScanner):
+        async def scan_favorite(self, fav_id, fav_name):
+            raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr("app.scheduler.daemon.DatabaseManager", lambda db_path, **_: DummyDatabase())
+    monkeypatch.setattr("app.scheduler.daemon.PathManager", lambda root_path, plex_mode: object())
+    monkeypatch.setattr("app.scheduler.daemon.FavScanner", ExplodingScanner)
+    monkeypatch.setattr(main.asyncio, "sleep", stop_after_first_sleep)
+
+    # 修复前：OSError 穿透 → daemon_loop 记 status=error 后 re-raise → 这里会
+    # 收到 OSError 而不是 CancelledError，进程退出。
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(main.daemon_loop(config, cred=object(), uid=1))
+
+    state = json.loads(runtime_file.read_text(encoding="utf-8"))
+    assert state["status"] != "error", f"来源异常不应把核心标记为错误: {state}"
+    output = capsys.readouterr().out
+    assert "收藏夹 First (1)" in output
+    assert "No space left on device" in output
+    assert "本轮扫描不完整" in output
+
+
 def test_daemon_loop_continues_after_one_source_fetch_failure(monkeypatch, capsys):
     calls = []
 

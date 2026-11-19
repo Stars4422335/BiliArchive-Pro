@@ -364,7 +364,7 @@ def test_download_enabled_key_is_validated_and_immediate():
         validate_config_payload({"system": {"download_enabled": "yes"}})
 
 
-# ---------- v1.9.8：免密开关 + 一键审计清除 ----------
+# ---------- v1.9.9：免密开关 + 一键审计清除（v1.9.8 引入） ----------
 
 
 def test_disable_auth_key_is_validated_and_immediate():
