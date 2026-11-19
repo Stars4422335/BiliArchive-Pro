@@ -38,6 +38,13 @@ BiliArchive-Pro-v*.zip
 !tests
 !tests/**
 
+# Docker 的语义是"最后一个匹配的规则生效"，上面的 !tests/** 会把 tests 目录
+# 整体重新包含，进而把本地跑 pytest 留下的字节码也带回上下文（每次本地测试
+# 都会让 COPY tests 层缓存失效，镜像内容也不干净）。这里在包含之后再显式排除，
+# 保证 "tests 源码进上下文、tests 下的字节码不进"。
+tests/**/__pycache__
+tests/**/*.py[cod]
+
 # Host operating-system files
 .DS_Store
 Thumbs.db

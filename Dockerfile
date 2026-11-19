@@ -48,6 +48,10 @@ RUN pip install --no-cache-dir -r requirements.txt -r requirements-dev.txt
 
 COPY app ./app
 COPY main.py login.py web.py config.yaml ./
+# 前后端徽章一致性测试需要读取这份 JSX（tests/test_qa_effect_badges_consistency.py
+# 用 Path(__file__).parents[1]/webui/src/views/SettingsView.jsx 定位）。只拷这一个
+# 文件，不 COPY 整个 webui/src，避免每次前端改动都让后端测试层缓存失效。
+COPY webui/src/views/SettingsView.jsx ./webui/src/views/SettingsView.jsx
 COPY tests ./tests
 
 CMD ["python", "-m", "pytest", "tests", "-q", "--cov=app", "--cov=main", "--cov-report=term", "--cov-fail-under=74"]
@@ -58,13 +62,13 @@ FROM python:3.11-slim
 ARG DEBIAN_MIRROR=https://deb.debian.org
 
 LABEL org.opencontainers.image.title="BiliArchive-Pro" \
-      org.opencontainers.image.version="1.9.8" \
+      org.opencontainers.image.version="1.9.9" \
       org.opencontainers.image.source="https://github.com/Stars4422335/BiliArchive-Pro" \
       org.opencontainers.image.licenses="GPL-3.0-only"
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
-    BILIARCHIVE_VERSION=1.9.8
+    BILIARCHIVE_VERSION=1.9.9
 
 WORKDIR /app
 
