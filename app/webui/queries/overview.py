@@ -5,18 +5,28 @@ from __future__ import annotations
 import shutil
 from typing import Any
 
+from app.webui.queries.assets import LEDGER_ROW_EXCLUSION
+
 
 class OverviewMixin:
     """The dashboard the WebUI opens on."""
 
     def dashboard(self) -> dict[str, Any]:
         database = self._database()
-        total = database.scalar("SELECT COUNT(*) FROM assets")
-        status_rows = database.query("SELECT status, COUNT(*) AS count FROM assets GROUP BY status")
-        type_rows = database.query("SELECT type, COUNT(*) AS count FROM assets GROUP BY type")
+        # 下载失败退避账本行（status=0 且 path 为 NULL 的最小行）不是已归档
+        # 资产：计数与"最近资产"都必须排除，口径与资产列表保持一致。
+        # 放在 WHERE 里不影响 idx_assets_lastcheck 的排序路径。
+        ledger_where = f" WHERE {LEDGER_ROW_EXCLUSION}"
+        total = database.scalar(f"SELECT COUNT(*) FROM assets{ledger_where}")
+        status_rows = database.query(
+            f"SELECT status, COUNT(*) AS count FROM assets{ledger_where} GROUP BY status"
+        )
+        type_rows = database.query(
+            f"SELECT type, COUNT(*) AS count FROM assets{ledger_where} GROUP BY type"
+        )
         recent_rows = database.query(
             "SELECT bvid, title, type, status, path, last_check, p_count "
-            "FROM assets ORDER BY last_check DESC, bvid LIMIT 10"
+            f"FROM assets{ledger_where} ORDER BY last_check DESC, bvid LIMIT 10"
         )
         status_counts = {str(row["status"]): row["count"] for row in status_rows}
         type_counts = {str(row["type"] or ""): row["count"] for row in type_rows}

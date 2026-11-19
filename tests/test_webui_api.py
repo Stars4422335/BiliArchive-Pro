@@ -107,6 +107,60 @@ def test_assets_filter_pagination_and_spa_fallback(webui_fixture):
     assert fallback.text == "<html>app</html>"
 
 
+def _insert_ledger_row(db_path, bvid="BV1ledger01"):
+    """造一条下载失败退避账本行：status=0 且 path 为 NULL 的最小行。"""
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            "INSERT INTO assets (bvid, title, type, status, path, last_check, p_count) "
+            "VALUES (?, NULL, NULL, 0, NULL, NULL, 1)",
+            (bvid,),
+        )
+        connection.commit()
+
+
+def test_asset_list_and_counts_exclude_download_failure_ledger_rows(webui_fixture):
+    """账本行不是已归档资产：列表、total 与概览计数都必须排除它。"""
+    client, root, _ = webui_fixture
+    db_path = root / "archive.db"
+    assert client.get("/api/assets").json()["total"] == 2
+
+    _insert_ledger_row(db_path)
+
+    listing = client.get("/api/assets").json()
+    assert listing["total"] == 2
+    listed_ids = {item["bvid"] for item in listing["items"]}
+    assert listed_ids == {"BV1", "CV2"}
+    assert "BV1ledger01" not in listed_ids
+
+    # 概览与列表口径一致：总数、状态计数、最近资产都不含账本行
+    body = client.get("/api/dashboard").json()
+    assert body["assets"]["total"] == 2
+    assert body["assets"]["status_counts"] == {"0": 1, "1": 1}
+    assert all(item["bvid"] != "BV1ledger01" for item in body["recent"])
+
+    # 带筛选条件时同样排除（COUNT(*) 与列表用的是同一组条件）
+    filtered = client.get("/api/assets", params={"status": "active"}).json()
+    assert filtered["total"] == 1
+    assert [item["bvid"] for item in filtered["items"]] == ["BV1"]
+
+
+def test_ledger_row_does_not_break_cursor_pagination(webui_fixture):
+    """排除条件不改变 last_check DESC, bvid 的游标语义。"""
+    client, root, _ = webui_fixture
+    _insert_ledger_row(root / "archive.db")
+
+    first = client.get("/api/assets", params={"page_size": 1}).json()
+    assert len(first["items"]) == 1
+    assert first["next_cursor"]
+
+    second = client.get(
+        "/api/assets",
+        params={"page_size": 1, "cursor": first["next_cursor"]},
+    ).json()
+    assert [item["bvid"] for item in second["items"]] != [first["items"][0]["bvid"]]
+    assert second["items"][0]["bvid"] in {"BV1", "CV2"}
+
+
 def test_poster_is_read_only_and_cannot_escape_download_root(webui_fixture):
     client, root, _ = webui_fixture
     asset_dir = root / "downloads" / "asset"

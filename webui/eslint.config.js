@@ -64,6 +64,8 @@ export default [
         clearInterval: "readonly",
         process: "readonly",
         console: "readonly",
+        // 标准内置（Node 17+ / jsdom 均提供），测试里用做配置深拷贝
+        structuredClone: "readonly",
       },
     },
   },

@@ -1,18 +1,33 @@
 import { Plus, Save, Search, Trash2, Wand2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { emptyConfig } from "../data/normalize";
+import {
+  DEFAULT_DOWNLOAD_RETRIES,
+  DEFAULT_SUBTITLE_LANGS,
+  MAX_DOWNLOAD_RETRIES,
+  emptyConfig,
+  normalizeRetries,
+  normalizeSubtitleLangs,
+} from "../data/normalize";
 import { api } from "../api/client";
 import { ErrorState, SavedNotice, Toggle } from "../components/ui";
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
 // 每个字段的生效分类：immediate 保存后由核心热重载，restart 需重启核心进程。
+// 必须与后端 EFFECT_METADATA 完全一致：下载类参数由 Downloader.refresh_config()
+// 在重载时换快照（重试次数、字幕白名单、磁盘阈值），下载总开关/清晰度审计/
+// 免密开关则由 reload_config 直接刷新扫描器字段——它们都是热重载项，
+// 标成"需重启"会让用户以为 P0 修好的热更新能力不存在而不敢用。
 const EFFECT = {
   immediate: [
     ["system", "sync_watch_later"], ["system", "sync_watch_history"],
     ["system", "max_history_days"], ["system", "check_update_on_start"],
     ["system", "scan_interval_seconds"], ["system", "max_downloads_per_run"],
     ["system", "download_timeout_seconds"],
+    ["system", "download_retries"], ["system", "subtitle_langs"],
+    ["system", "min_disk_gb"],
+    ["system", "download_enabled"], ["system", "quality_audit_enabled"],
+    ["system", "disable_auth"],
     ["network", "sync_retry_attempts"], ["network", "sync_retry_backoff_seconds"],
     ["network", "request_timeout_seconds"],
     ["archive_protection", "mark_deleted_prefix"], ["archive_protection", "tombstone_prefix"],
@@ -111,8 +126,18 @@ export default function SettingsView({ config, loading, error, onRetry, onSave }
   async function submit(event) {
     event.preventDefault();
     setSaving(true); setSaveNotice(""); setSaveError("");
+    // 提交前再归一化一次：输入框允许中间态（清空得到 NaN、粘进首尾空格），
+    // 直接回传会被后端校验拒绝，表现为"保存失败"。
+    const sanitized = {
+      ...draft,
+      system: {
+        ...draft.system,
+        download_retries: normalizeRetries(draft.system?.download_retries),
+        subtitle_langs: normalizeSubtitleLangs(draft.system?.subtitle_langs),
+      },
+    };
     try {
-      const saved = await onSave(draft);
+      const saved = await onSave(sanitized);
       const effects = saved?.effects;
       if (effects) {
         const parts = [];
@@ -139,6 +164,8 @@ export default function SettingsView({ config, loading, error, onRetry, onSave }
         <Field label={<>扫描间隔（秒）<EffectBadge section="system" k="scan_interval_seconds" /></>}><input type="number" min="60" max="2678400" required value={draft.system.scan_interval_seconds} onChange={(event) => updateSection("system", "scan_interval_seconds", Number(event.target.value))} /></Field>
         <Field label={<>单轮下载上限<EffectBadge section="system" k="max_downloads_per_run" /></>} hint="0 表示不限制"><input type="number" min="0" max="1000000" required value={draft.system.max_downloads_per_run} onChange={(event) => updateSection("system", "max_downloads_per_run", Number(event.target.value))} /></Field>
         <Field label={<>单项下载超时（秒）<EffectBadge section="system" k="download_timeout_seconds" /></>} hint="0 表示不限制"><input type="number" min="0" max="604800" required value={draft.system.download_timeout_seconds} onChange={(event) => updateSection("system", "download_timeout_seconds", Number(event.target.value))} /></Field>
+        <Field label={<>下载重试次数<EffectBadge section="system" k="download_retries" /></>} hint={`单个视频与分片的重试次数：0 表示不重试，默认 ${DEFAULT_DOWNLOAD_RETRIES}，上限 ${MAX_DOWNLOAD_RETRIES}`}><input type="number" min="0" max="50" required value={draft.system.download_retries ?? DEFAULT_DOWNLOAD_RETRIES} onChange={(event) => updateSection("system", "download_retries", event.target.value === "" ? "" : Number(event.target.value))} /></Field>
+        <Field label={<>字幕语言白名单<EffectBadge section="system" k="subtitle_langs" /></>} hint={`逗号分隔；默认 ${DEFAULT_SUBTITLE_LANGS}，留空或非法值回退默认`}><input maxLength="200" value={draft.system.subtitle_langs ?? DEFAULT_SUBTITLE_LANGS} onChange={(event) => updateSection("system", "subtitle_langs", event.target.value)} placeholder={DEFAULT_SUBTITLE_LANGS} /></Field>
         <Field label={<>输出模式<EffectBadge section="system" k="plex_mode" /></>}><select value={draft.system.plex_mode ? "plex" : "flat"} onChange={(event) => updateSection("system", "plex_mode", event.target.value === "plex")}><option value="plex">Plex 分季模式</option><option value="flat">平铺模式</option></select></Field>
         <Field label={<>完整性巡检<EffectBadge section="system" k="verify_integrity" /></>} hint="抽样校验已归档文件是否损坏"><select value={draft.system.verify_integrity || "light"} onChange={(event) => updateSection("system", "verify_integrity", event.target.value)}><option value="off">关闭</option><option value="light">轻度抽样</option><option value="full">全量校验</option></select></Field>
         <Field label={<>历史保留天数<EffectBadge section="system" k="max_history_days" /></>} hint="0 表示永久保留"><input type="number" min="0" max="3650" required value={draft.system.max_history_days ?? 0} onChange={(event) => updateSection("system", "max_history_days", Number(event.target.value))} /></Field>

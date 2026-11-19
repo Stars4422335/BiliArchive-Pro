@@ -18,6 +18,18 @@ STATUS_NAMES = {
     "protected": 2,
 }
 
+#: 下载失败退避账本行不是已归档资产。
+#:
+#: `DatabaseManager.record_download_failure()` 会为"从未下载成功过"的条目
+#: 建一条最小行（status=0 且 path 为 NULL，只有 fail_count / last_fail 有
+#: 意义）来驱动退避冷却。这类行若混进资产列表，WebUI 会显示成"无标题、
+#: 无封面、无路径"的 Active 资产，总数也会虚高，所以列表与所有计数都要
+#: 排除它。
+#:
+#: 判据只认 `path IS NULL`：账本行由 INSERT 直接写入 NULL，而正常归档行
+#: 一定带路径（历史遗留的空串行仍按已归档展示，不在这里做二次判定）。
+LEDGER_ROW_EXCLUSION = "NOT (status = 0 AND path IS NULL)"
+
 #: Separator between the two cursor fields. It cannot appear in an ISO
 #: timestamp nor in a bvid, so the pair never becomes ambiguous.
 _CURSOR_SEPARATOR = "\x1f"
@@ -80,7 +92,9 @@ class AssetsMixin:
         if page < 1 or page_size < 1 or page_size > 200:
             raise ValueError("page 必须大于 0，page_size 必须在 1 到 200 之间")
         has_source = self._has_source_column()
-        filter_conditions = []
+        # 第一条件就是账本行排除：filter_conditions 同时用于 COUNT(*) 与
+        # 列表查询，两边的口径必须一致（详见 LEDGER_ROW_EXCLUSION）。
+        filter_conditions = [LEDGER_ROW_EXCLUSION]
         filter_parameters: list[Any] = []
         if query:
             if len(query) > 200:

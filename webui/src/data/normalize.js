@@ -1,3 +1,7 @@
+export const DEFAULT_DOWNLOAD_RETRIES = 10;
+export const MAX_DOWNLOAD_RETRIES = 50;
+export const DEFAULT_SUBTITLE_LANGS = "zh-Hans,zh-CN,zh,ai-zh";
+
 export const emptyConfig = {
   revision: "",
   system: {
@@ -5,6 +9,8 @@ export const emptyConfig = {
     scan_interval_seconds: 21600,
     max_downloads_per_run: 0,
     download_timeout_seconds: 7200,
+    download_retries: DEFAULT_DOWNLOAD_RETRIES,
+    subtitle_langs: DEFAULT_SUBTITLE_LANGS,
     plex_mode: true,
     sync_watch_later: false,
     sync_watch_history: false,
@@ -38,6 +44,45 @@ export const emptyConfig = {
 };
 
 const statusMap = { 0: "active", 1: "tombstoned", 2: "protected" };
+
+/**
+ * 下载重试次数归一化：数字输入框清空或输入非法字符会得到 ""/NaN，
+ * 直接提交会被后端（0~50 整数校验）拒绝，用户只看到一句"保存失败"。
+ * 这里统一夹到 0~50 的整数，非法值回落默认值 10。
+ */
+export function normalizeRetries(value) {
+  const raw = typeof value === "string" ? value.trim() : value;
+  if (raw === "" || raw === null || raw === undefined) return DEFAULT_DOWNLOAD_RETRIES;
+  const number = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isFinite(number)) return DEFAULT_DOWNLOAD_RETRIES;
+  return Math.min(MAX_DOWNLOAD_RETRIES, Math.max(0, Math.trunc(number)));
+}
+
+/**
+ * 语言标签格式：与后端 `Downloader._SUBTITLE_LANG_PATTERN` **近似**对齐。
+ *
+ * 这里刻意比后端更严（后端只限制整串 ≤200 字符，不限单项长度），所以前端
+ * 产物一定能被后端接受，不会出现"UI 显示值 ≠ 引擎生效值"。
+ * 放宽这条正则时**不得宽于后端的整串 200 限制**，否则会反向出现不一致。
+ */
+const SUBTITLE_LANG_PATTERN = /^[A-Za-z0-9_-]{1,40}$/;
+
+/**
+ * 字幕语言白名单归一化：按逗号/分号切分、逐项 trim，只保留合法语言标签，
+ * 清洗后为空则回落默认白名单。
+ *
+ * 必须逐项校验而不是只做 trim：后端遇到任何非法项会整串回退默认，若前端
+ * 把 `zh;en` 这类值原样保存并显示，用户看到的值就不是引擎实际生效的值。
+ * 这里顺手把 `;` 当分隔符处理，把它归一化成后端能接受的形式。
+ */
+export function normalizeSubtitleLangs(value) {
+  if (typeof value !== "string") return DEFAULT_SUBTITLE_LANGS;
+  const langs = value
+    .split(/[,;]/)
+    .map((part) => part.trim())
+    .filter((part) => SUBTITLE_LANG_PATTERN.test(part));
+  return langs.length ? langs.join(",") : DEFAULT_SUBTITLE_LANGS;
+}
 
 function normalizeAsset(item = {}) {
   const id = item.id || item.bvid || "";
@@ -111,10 +156,13 @@ export function normalizeAssets(payload) {
 export function normalizeConfig(payload) {
   const envelope = payload?.config ? payload : payload?.data?.config ? payload.data : {};
   const data = envelope.config || payload?.data || payload || {};
+  const system = { ...emptyConfig.system, ...(data.system || {}) };
+  system.download_retries = normalizeRetries(system.download_retries);
+  system.subtitle_langs = normalizeSubtitleLangs(system.subtitle_langs);
   return {
     revision: envelope.revision || payload?.revision || "",
     effects: payload?.effects || data.effects || null,
-    system: { ...emptyConfig.system, ...(data.system || {}) },
+    system,
     network: { ...emptyConfig.network, ...(data.network || {}) },
     components: {
       "yt-dlp": { ...emptyConfig.components["yt-dlp"], ...(data.components?.["yt-dlp"] || {}) },
